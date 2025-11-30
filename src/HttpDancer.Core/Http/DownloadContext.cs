@@ -1,0 +1,39 @@
+namespace HttpDancer.Core.Http;
+
+/// <summary>
+/// Holds configuration and callbacks for a download operation.
+/// </summary>
+public class DownloadContext
+{
+    /// <summary>
+    /// The set of URLs to be downloaded (required for initialization)
+    /// </summary>
+    public required string[] Urls { get; set; }
+
+    /// <summary>
+    /// The maximum number of requests to perform in total before stopping
+    /// </summary>
+    public int MaxRequests { get; set; } = 10;
+
+    /// <summary>
+    /// The maximum number of downloads that can happen in parallel
+    /// </summary>
+    public int MaxConcurrentRequests { get; set; } = 2;
+
+    /// <summary>
+    /// Optional hook executed after dedupe but before scheduling a download.
+    /// Return Proceed/SkipOnce/SkipPermanently to control flow.
+    /// </summary>
+    public Func<string, Task<RequestDecision>>? RequestAsync { get; set; }
+
+    /// <summary>
+    /// Optional callback invoked after each completed download with richer payload.
+    /// </summary>
+    public Func<ChanneledDownloadService, DownloadResponse, Task>? ResponseAsync { get; set; }
+
+    /// <summary>
+    /// Optional callback invoked wen the current status of the download operation change.
+    /// </summary>
+    public Func<ChanneledDownloadService, StatusResponse, Task>? StatusAsync { get; set; }
+
+}
