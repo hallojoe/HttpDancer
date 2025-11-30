@@ -8,12 +8,14 @@
     </PropertyGroup>
 
     <ItemGroup>
+        <PackageReference Include="AngleSharp" Version="1.4.0" />
         <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="9.0.7" />
         <PackageReference Include="Microsoft.Extensions.Hosting" Version="9.0.7" />
     </ItemGroup>
 
     <ItemGroup>
       <ProjectReference Include="..\HttpDancer.Core\HttpDancer.Core.csproj" />
+      <ProjectReference Include="..\HttpDancer.FileSystemDownloader\HttpDancer.FileSystemDownloader.csproj" />
       <ProjectReference Include="..\HttpDancer.Utilities\HttpDancer.Utilities.csproj" />
     </ItemGroup>
 
@@ -22,13 +24,5 @@
             <CopyToOutputDirectory>Always</CopyToOutputDirectory>
             <CopyToPublishDirectory>Always</CopyToPublishDirectory>
         </None>
-        <None Update="appsettings.Test.json">
-            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-            <CopyToPublishDirectory>Always</CopyToPublishDirectory>
-        </None>
-    </ItemGroup>
-
-    <ItemGroup>
-        <Folder Include="Models\" />
     </ItemGroup>
 </Project>

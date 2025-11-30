@@ -1,6 +1,6 @@
 using System.Diagnostics;
 
-namespace HttpDancer.Core.Observability;
+namespace HttpDancer.Core.Http.Observability;
 
 public sealed class CorrelationIdProvider : ICorrelationIdProvider
 {

@@ -48,16 +48,19 @@ public partial class UrlNaming
         // Decide which segment to use for the name:
         // - If the last segment looks like a file (contains '.'), use that.
         // - Otherwise use the second last segment (matches your "Godt-at-vide..." example).
-        string nameSegment;
-        if (segments.Length == 1)
-        {
-            nameSegment = segments[0];
-        }
-        else
-        {
-            var last = segments[^1];
-            nameSegment = last.Contains('.') ? last : segments[^2];
-        }
+        
+        // Take last
+        var nameSegment = segments[^1];
+        
+        // if (segments.Length == 1)
+        // {
+        //     nameSegment = segments[0];
+        // }
+        // else
+        // {
+        //     var last = segments[^1];
+        //     nameSegment = last.Contains('.') ? last : segments[^2];
+        // }
 
         var baseName = NormalizeSegmentForSlug(nameSegment);
 

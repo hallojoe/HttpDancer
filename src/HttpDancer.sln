@@ -15,6 +15,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HttpDancer.Extensions", "Ht
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HttpDancer.Extensions.Tests", "HttpDancer.Extensions.Tests\HttpDancer.Extensions.Tests.csproj", "{86139E78-9970-4427-8EA8-D0486BEADBEB}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HttpDancer.FileSystemDownloader", "HttpDancer.FileSystemDownloader\HttpDancer.FileSystemDownloader.csproj", "{35D0DDA5-284D-4F9F-8A57-5251E297E049}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -97,6 +99,18 @@ Global
 		{86139E78-9970-4427-8EA8-D0486BEADBEB}.Release|x64.Build.0 = Release|Any CPU
 		{86139E78-9970-4427-8EA8-D0486BEADBEB}.Release|x86.ActiveCfg = Release|Any CPU
 		{86139E78-9970-4427-8EA8-D0486BEADBEB}.Release|x86.Build.0 = Release|Any CPU
+		{35D0DDA5-284D-4F9F-8A57-5251E297E049}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{35D0DDA5-284D-4F9F-8A57-5251E297E049}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{35D0DDA5-284D-4F9F-8A57-5251E297E049}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{35D0DDA5-284D-4F9F-8A57-5251E297E049}.Debug|x64.Build.0 = Debug|Any CPU
+		{35D0DDA5-284D-4F9F-8A57-5251E297E049}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{35D0DDA5-284D-4F9F-8A57-5251E297E049}.Debug|x86.Build.0 = Debug|Any CPU
+		{35D0DDA5-284D-4F9F-8A57-5251E297E049}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{35D0DDA5-284D-4F9F-8A57-5251E297E049}.Release|Any CPU.Build.0 = Release|Any CPU
+		{35D0DDA5-284D-4F9F-8A57-5251E297E049}.Release|x64.ActiveCfg = Release|Any CPU
+		{35D0DDA5-284D-4F9F-8A57-5251E297E049}.Release|x64.Build.0 = Release|Any CPU
+		{35D0DDA5-284D-4F9F-8A57-5251E297E049}.Release|x86.ActiveCfg = Release|Any CPU
+		{35D0DDA5-284D-4F9F-8A57-5251E297E049}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

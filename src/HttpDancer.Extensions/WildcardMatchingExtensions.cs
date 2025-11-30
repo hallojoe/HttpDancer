@@ -11,6 +11,23 @@ public static class WildcardMatchingExtensions
         ArgumentNullException.ThrowIfNull(pattern);
         ArgumentNullException.ThrowIfNull(input);
 
+        // Convenience: allow comma-separated patterns via IsAnyMatch.
+        if (pattern.IndexOf(',') >= 0)
+        {
+            return input.IsAnyMatch(pattern, ignoreCase);
+        }
+
+        // Host-friendly: if the pattern looks like a hostname/glob and the input is a URI,
+        // match against the host instead of the full URL.
+        var patternLooksLikeHost = pattern.IndexOf('/') == -1 && pattern.IndexOf(':') == -1 && pattern.IndexOf('.') >= 0;
+
+        if (patternLooksLikeHost &&
+            Uri.TryCreate(input, UriKind.Absolute, out var uri) &&
+            string.IsNullOrEmpty(uri.Host) is false)
+        {
+            return uri.Host.AsSpan().IsMatch(pattern.AsSpan(), ignoreCase);
+        }
+
         return input.AsSpan().IsMatch(pattern.AsSpan(), ignoreCase);
     }
 
@@ -22,10 +39,9 @@ public static class WildcardMatchingExtensions
         ArgumentNullException.ThrowIfNull(patterns);
         ArgumentNullException.ThrowIfNull(input);
 
-        var inputSpan = input.AsSpan();
         foreach (var pattern in patterns)
         {
-            if (inputSpan.IsMatch(pattern.AsSpan(), ignoreCase))
+            if (input.IsMatch(pattern, ignoreCase))
             {
                 return true;
             }
@@ -39,69 +55,45 @@ public static class WildcardMatchingExtensions
     /// </summary>
     public static bool IsMatch(this ReadOnlySpan<char> input, ReadOnlySpan<char> pattern, bool ignoreCase = true)
     {
-        var patternIndex = 0;
-        var inputIndex = 0;
+        var i = 0;
+        var j = 0;
+        var starIndex = -1;
+        var matchIndex = 0;
 
-        // Index of the last '*' in the pattern, or -1 if none seen yet
-        var lastStarPatternIndex = -1;
-
-        // Input index we were at when we last saw a '*'
-        var lastStarInputIndex = 0;
-
-        // Walk the input
-        while (inputIndex < input.Length)
+        while (i < input.Length)
         {
-            if (patternIndex < pattern.Length)
+            if (j < pattern.Length && (pattern[j] == '?' || CharsEqual(pattern[j], input[i], ignoreCase)))
             {
-                var patternChar = pattern[patternIndex];
-
-                // '*' can match zero or more characters
-                if (patternChar == '*')
-                {
-                    // Remember where the '*' is and where we are in input
-                    lastStarPatternIndex = patternIndex;
-                    lastStarInputIndex = inputIndex;
-
-                    // Move past '*'
-                    patternIndex++;
-                    continue;
-                }
-
-                var inputChar = input[inputIndex];
-
-                // Direct match or '?' single-character wildcard
-                if (patternChar == '?' || CharsEqual(patternChar, inputChar, ignoreCase))
-                {
-                    patternIndex++;
-                    inputIndex++;
-                    continue;
-                }
-            }
-
-            // If we had a previous '*', backtrack: let '*' absorb one more character
-            if (lastStarPatternIndex != -1)
-            {
-                // Reset pattern position to the first char after '*'
-                patternIndex = lastStarPatternIndex + 1;
-
-                // Extend the match of '*' by one character
-                lastStarInputIndex++;
-                inputIndex = lastStarInputIndex;
+                i++;
+                j++;
                 continue;
             }
 
-            // No match and no '*' to fall back on
+            if (j < pattern.Length && pattern[j] == '*')
+            {
+                starIndex = j;
+                matchIndex = i;
+                j++;
+                continue;
+            }
+
+            if (starIndex != -1)
+            {
+                j = starIndex + 1;
+                matchIndex++;
+                i = matchIndex;
+                continue;
+            }
+
             return false;
         }
 
-        // Consume any trailing '*' in the pattern
-        while (patternIndex < pattern.Length && pattern[patternIndex] == '*')
+        while (j < pattern.Length && pattern[j] == '*')
         {
-            patternIndex++;
+            j++;
         }
 
-        // Match only if we've consumed the entire pattern
-        return patternIndex == pattern.Length;
+        return j == pattern.Length;
     }
 
     /// <summary>
@@ -152,7 +144,21 @@ public static class WildcardMatchingExtensions
         ArgumentNullException.ThrowIfNull(patterns);
         ArgumentNullException.ThrowIfNull(input);
 
-        return input.AsSpan().IsAnyMatch(patterns.AsSpan(), ignoreCase, separator);
+        foreach (var raw in patterns.Split(separator, StringSplitOptions.RemoveEmptyEntries))
+        {
+            var pattern = raw.Trim();
+            if (pattern.Length == 0)
+            {
+                continue;
+            }
+
+            if (input.IsMatch(pattern, ignoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static bool CharsEqual(char a, char b, bool ignoreCase)

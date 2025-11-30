@@ -1,4 +1,4 @@
-namespace HttpDancer.Core.Models;
+namespace HttpDancer.Core.Http.Configuration;
 
 public class HttpClientSettings
 {

@@ -1,4 +1,4 @@
-namespace HttpDancer.Core.Observability;
+namespace HttpDancer.Core.Http.Observability;
 
 public interface ICorrelationIdProvider
 {

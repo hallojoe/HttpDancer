@@ -7,12 +7,15 @@
     </PropertyGroup>
 
     <ItemGroup>
+        <PackageReference Include="AngleSharp" Version="1.4.0" />
         <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="9.0.4" />
         <PackageReference Include="Microsoft.Extensions.Http" Version="9.0.4" />
         <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.4" />
     </ItemGroup>
 
     <ItemGroup>
-      <ProjectReference Include="..\HttpDancer.Extensions\HttpDancer.Extensions.csproj" />
+      <ProjectReference Include="..\HttpDancer.Core\HttpDancer.Core.csproj" />
+      <ProjectReference Include="..\HttpDancer.Utilities\HttpDancer.Utilities.csproj" />
     </ItemGroup>
+
 </Project>

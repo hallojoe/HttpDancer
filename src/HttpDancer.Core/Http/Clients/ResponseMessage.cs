@@ -1,10 +1,10 @@
 using System.Net;
 using System.Text.Json.Serialization;
 
-namespace HttpDancer.Core;
+namespace HttpDancer.Core.Http.Clients;
 
 
-public sealed class ResourceResponse
+public sealed class ResponseMessage
 {
     /// <summary>
     /// The final resolved URL of the resource (after redirects, if applicable).

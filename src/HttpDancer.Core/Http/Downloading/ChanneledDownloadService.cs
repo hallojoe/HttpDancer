@@ -1,8 +1,9 @@
 using System.Collections.Concurrent;
 using System.Threading.Channels;
+using HttpDancer.Core.Http.Clients;
 using Microsoft.Extensions.Logging;
 
-namespace HttpDancer.Core.Http;
+namespace HttpDancer.Core.Http.Downloading;
 
 /// <summary>
 /// Channel-based downloader with controlled concurrency and a total request budget.
@@ -17,7 +18,7 @@ public class ChanneledDownloadService : IDownloadService
 {
     private readonly ILogger<ChanneledDownloadService> _logger;
     private readonly IHttpClient _httpClient;
-    private readonly DownloadContext _downloadContext;
+    private readonly ChanneledDownloadRequest _channeledDownloadRequest;
 
     /// <summary>
     /// URLs that have been fully processed (success or permanently skipped). Case-insensitive.
@@ -37,6 +38,16 @@ public class ChanneledDownloadService : IDownloadService
         SingleReader = false,
         SingleWriter = false,
         AllowSynchronousContinuations = false
+    });
+
+    /// <summary>
+    /// Callback queue so response/status handlers do not block download workers.
+    /// </summary>
+    private readonly Channel<CallbackWork> _callbackChannel = Channel.CreateBounded<CallbackWork>(new BoundedChannelOptions(256)
+    {
+        SingleReader = true,
+        SingleWriter = false,
+        FullMode = BoundedChannelFullMode.DropOldest
     });
     
     // Live counters/flags
@@ -66,14 +77,14 @@ public class ChanneledDownloadService : IDownloadService
     public ChanneledDownloadService(
         ILogger<ChanneledDownloadService> logger,
         IHttpClient httpClient,
-        DownloadContext downloadContext)
+        ChanneledDownloadRequest channeledDownloadRequest)
     {
         _logger = logger;
         _httpClient = httpClient;
-        _downloadContext = downloadContext;
+        _channeledDownloadRequest = channeledDownloadRequest;
 
         // Seed initial URLs
-        EnqueueUrls(_downloadContext.Urls);
+        EnqueueUrls(_channeledDownloadRequest.Urls);
     }
 
     /// <summary>
@@ -128,7 +139,8 @@ public class ChanneledDownloadService : IDownloadService
 
         var token = cts.Token; // Capture the struct, not the CTS object else we get: Captured variable is disposed in the outer scope
 
-        var workers = StartWorkers(_downloadContext.MaxConcurrentRequests, token);
+        var workers = StartWorkers(_channeledDownloadRequest.MaxConcurrentRequests, token);
+        var callbackWorker = Task.Run(CallbackWorkerAsync);
 
         // Monitor loop: completes the writer when we're definitively done scheduling.
         var monitor = Task.Run(async () =>
@@ -184,6 +196,18 @@ public class ChanneledDownloadService : IDownloadService
             _logger.LogError(ex, "Unexpected error during downloads.");
             throw;
         }
+        finally
+        {
+            _callbackChannel.Writer.TryComplete();
+            try
+            {
+                await callbackWorker.ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                // Ignore cancellation during callback drain.
+            }
+        }
     }
     
     private void TryCompleteWriter()
@@ -234,12 +258,12 @@ public class ChanneledDownloadService : IDownloadService
                     }
 
                     // Pre-download decision (skip once / permanently / proceed).
-                    if (_downloadContext.RequestAsync is not null)
+                    if (_channeledDownloadRequest.RequestAsync is not null)
                     {
                         RequestDecision decision;
                         try
                         {
-                            decision = await _downloadContext.RequestAsync(url).ConfigureAwait(false);
+                            decision = await _channeledDownloadRequest.RequestAsync(url).ConfigureAwait(false);
                         }
                         catch (Exception exception)
                         {
@@ -274,7 +298,7 @@ public class ChanneledDownloadService : IDownloadService
 
                     // Reserve against the overall request budget.
                     var issued = Interlocked.Increment(ref _requestCount);
-                    if (issued > _downloadContext.MaxRequests)
+                    if (issued > _channeledDownloadRequest.MaxRequests)
                     {
                         // Over the cap: roll back and mark budget exhausted.
                         Interlocked.Decrement(ref _requestCount);
@@ -318,20 +342,38 @@ public class ChanneledDownloadService : IDownloadService
     {
         try
         {
-            var resource = await _httpClient.GetAsync(url, token).ConfigureAwait(false);
+            Uri targetUri;
+            try
+            {
+                targetUri = new Uri(url);
+            }
+            catch (UriFormatException uriEx)
+            {
+                _processedUrls.TryAdd(url, 0);
+                _logger.LogWarning(uriEx, "Invalid URL format skipped: {Url}", url);
+                return;
+            }
+
+            var requestMessage = new RequestMessage
+            {
+                Uri = targetUri,
+                ShouldReadBodyAsync = _channeledDownloadRequest.ShouldReadBodyAsync
+            };
+
+            var resource = await _httpClient.SendAsync(requestMessage, token).ConfigureAwait(false);
 
             // Mark as processed on success.
             _processedUrls.TryAdd(url, 0);
 
             // Fire single response completion callback (best-effort).
-            if (_downloadContext.ResponseAsync is not null)
+            if (_channeledDownloadRequest.ResponseAsync is not null)
             {
                 var response = new DownloadResponse
                 {
                     Url = url,
                     Value = resource
                 };
-                await _downloadContext.ResponseAsync(this, response).ConfigureAwait(false);
+                EnqueueCallback(new CallbackWork(CallbackKind.Response, response, null));
             }
             
             _logger.LogInformation("Downloaded: {Url}", url);
@@ -347,19 +389,82 @@ public class ChanneledDownloadService : IDownloadService
             // Not marked processed: caller can re-enqueue or apply a retry policy externally.
         }
 
-        if (_downloadContext.StatusAsync is not null)
+        if (_channeledDownloadRequest.StatusAsync is not null)
         {
+            var processed = _processedUrls.Count;
+            var pending = Volatile.Read(ref _pending);
+            var inFlight = Volatile.Read(ref _inFlight);
+            var scheduled = Volatile.Read(ref _requestCount);
+
             var response = new StatusResponse
             {
-                ProcessedCount = _processedUrls.Count,
+                ProcessedCount = processed,
                 // Approximate remaining: bounded by leftover budget and pending queue items.
                 RemainingCount = Math.Max(
                     0,
                     Math.Min(
-                        _downloadContext.MaxRequests - Volatile.Read(ref _requestCount),
-                        Volatile.Read(ref _pending)))
+                        _channeledDownloadRequest.MaxRequests - scheduled,
+                        pending)),
+                InFlightCount = inFlight,
+                PendingCount = pending,
+                ScheduledCount = scheduled,
+                MaxRequests = _channeledDownloadRequest.MaxRequests
             };
-            await _downloadContext.StatusAsync(this, response).ConfigureAwait(false);
+            EnqueueCallback(new CallbackWork(CallbackKind.Status, null, response));
         }
     }
+
+    private void EnqueueCallback(CallbackWork work)
+    {
+        if (_callbackChannel.Writer.TryWrite(work))
+        {
+            return;
+        }
+
+        _logger.LogWarning("Callback queue full; dropping {Kind}", work.Kind);
+    }
+
+    private async Task CallbackWorkerAsync()
+    {
+        var reader = _callbackChannel.Reader;
+        
+        try
+        {
+            while (await reader.WaitToReadAsync().ConfigureAwait(false))
+            {
+                while (reader.TryRead(out var work))
+                {
+                    try
+                    {
+                        switch (work.Kind)
+                        {
+                            case CallbackKind.Response when _channeledDownloadRequest.ResponseAsync is not null:
+                                await _channeledDownloadRequest.ResponseAsync(this, work.Response!).ConfigureAwait(false);
+                                break;
+
+                            case CallbackKind.Status when _channeledDownloadRequest.StatusAsync is not null:
+                                await _channeledDownloadRequest.StatusAsync(this, work.Status!).ConfigureAwait(false);
+                                break;
+                        }
+                    }
+                    catch (Exception exception)
+                    {
+                        _logger.LogError(exception, "Error running {Kind} callback.", work.Kind);
+                    }
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Shutting down.
+        }
+    }
+
+    private enum CallbackKind
+    {
+        Response,
+        Status
+    }
+
+    private readonly record struct CallbackWork(CallbackKind Kind, DownloadResponse? Response, StatusResponse? Status);
 }

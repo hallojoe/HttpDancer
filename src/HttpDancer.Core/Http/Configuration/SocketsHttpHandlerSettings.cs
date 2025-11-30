@@ -1,7 +1,7 @@
 using System.Net;
 using System.Text.Json.Serialization;
 
-namespace HttpDancer.Core.Models;
+namespace HttpDancer.Core.Http.Configuration;
 
 public sealed class SocketsHttpHandlerSettings
 {

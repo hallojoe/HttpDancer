@@ -1,6 +1,6 @@
-namespace HttpDancer.Core;
+namespace HttpDancer.Core.Http.Clients;
 
-public sealed class ResourceRequest
+public sealed class RequestMessage
 {
     /// <summary>
     /// Target URI for the request.
@@ -25,15 +25,21 @@ public sealed class ResourceRequest
 
     /// <summary>
     /// Optional override: whether to read the body for successful responses.
-    /// If null, the client falls back to ApiClientSettings.ReadBodyOnSuccess (except for HEAD).
+    /// If null, the client falls back to HttpDancerSettings.ReadBodyOnSuccess (except for HEAD).
     /// </summary>
     public bool? ReadBodyOnSuccess { get; init; }
 
     /// <summary>
     /// Optional override: whether to read the body for non-success responses.
-    /// If null, the client falls back to ApiClientSettings.ReadBodyOnNonSuccess (except for HEAD).
+    /// If null, the client falls back to HttpDancerSettings.ReadBodyOnNonSuccess (except for HEAD).
     /// </summary>
     public bool? ReadBodyOnNonSuccess { get; init; }
+
+    /// <summary>
+    /// Optional callback to decide whether to read the body after inspecting the response metadata
+    /// (headers, status, etc). Return true to force read, false to skip, null to use defaults.
+    /// </summary>
+    public Func<ResponseMessage, Task<bool?>>? ShouldReadBodyAsync { get; init; }
 
     /// <summary>
     /// Optional per-request timeout. If set, the request will be canceled after this duration,

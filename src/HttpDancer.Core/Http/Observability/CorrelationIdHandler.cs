@@ -1,12 +1,11 @@
 using HttpDancer.Core.Configuration;
-using HttpDancer.Core.Observability;
 using Microsoft.Extensions.Options;
 
-namespace HttpDancer.Core.Http;
+namespace HttpDancer.Core.Http.Observability;
 
 public sealed class CorrelationIdHandler(
     ICorrelationIdProvider correlationIdProvider,
-    IOptionsMonitor<ApiClientSettings> apiClientSettings)
+    IOptionsMonitor<HttpDancerSettings> apiClientSettings)
     : DelegatingHandler
 {
     protected override Task<HttpResponseMessage> SendAsync(

@@ -1,5 +1,5 @@
 ﻿using HttpDancer.Core.Configuration;
-using HttpDancer.Utilities.IO;
+using HttpDancer.FileSystemDownloader;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
@@ -23,16 +23,20 @@ public class Program
         using var scope = host.Services.CreateScope();
 
         // Get required services
-        var options = scope.ServiceProvider.GetRequiredService<IOptions<ApiClientSettings>>();
+        var httpDancerSettingsOptionsMonitor = scope.ServiceProvider.GetRequiredService<IOptionsMonitor<HttpDancerSettings>>();
 
-        var downloadHtmlJob = scope.ServiceProvider.GetRequiredService<DownloadHtmlJob>();
+        var fileSystemDataProvider = scope.ServiceProvider.GetRequiredService<IFileSystemDataProvider>();
+        var fileSystemDownloadRunner = scope.ServiceProvider.GetRequiredService<IFileSystemDownloadRunner>();
+        var fileSystemDataSettings = scope.ServiceProvider.GetRequiredService<IOptionsMonitor<FileSystemDataSettings>>();
         
         // Read URLs from options 
-        var urls = await IoHelper.ReadAllLinesAsync(options.Value.Io.Workspace ?? throw new ArgumentNullException(), options.Value.Io.HrefListPaths);
+        var urlsWithNoQuerystring = (await fileSystemDataProvider.ReadAllLinesAsync(fileSystemDataSettings.CurrentValue.HrefListPaths))
+            .Select(url => url.Split('?').First()).Distinct().ToArray();
         
-        var y = await downloadHtmlJob.DownloadHtml(urls, false);
+        var y = await fileSystemDownloadRunner.Run(urlsWithNoQuerystring, true);
         
         System.Console.WriteLine("Crawler finished. Press any key to exit...");
         System.Console.ReadKey();
     }
 }
+
