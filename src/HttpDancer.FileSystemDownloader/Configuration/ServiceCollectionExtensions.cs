@@ -1,3 +1,4 @@
+using HttpDancer.FileSystemDownloader.Minification;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -9,6 +10,7 @@ public static class ServiceCollectionExtensions
     {
         services.Configure<FileSystemDataSettings>(configuration.GetSection(FileSystemDataSettings.Key));
         services.AddOptions<MinificationSettings>().BindConfiguration(MinificationSettings.Key);
+        services.AddSingleton<IHtmlMinifier, AngleSharpHtmlHtmlMinifier>();
         services.AddSingleton<IFileSystemDownloadRunner, FileSystemDownloadRunner>();
         services.AddSingleton<IFileSystemDataProvider, FileSystemDataProvider>();
         return services;

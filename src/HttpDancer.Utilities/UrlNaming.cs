@@ -45,22 +45,9 @@ public partial class UrlNaming
             return string.Empty;
         }
 
-        // Decide which segment to use for the name:
-        // - If the last segment looks like a file (contains '.'), use that.
-        // - Otherwise use the second last segment (matches your "Godt-at-vide..." example).
-        
-        // Take last
-        var nameSegment = segments[^1];
-        
-        // if (segments.Length == 1)
-        // {
-        //     nameSegment = segments[0];
-        // }
-        // else
-        // {
-        //     var last = segments[^1];
-        //     nameSegment = last.Contains('.') ? last : segments[^2];
-        // }
+        // Always use the last path segment and strip its extension (if any).
+        var lastSegment = segments[^1];
+        var nameSegment = Path.GetFileNameWithoutExtension(lastSegment);
 
         var baseName = NormalizeSegmentForSlug(nameSegment);
 

@@ -25,6 +25,7 @@ public class FileSystemDownloadRunner(
     IOptionsMonitor<MinificationSettings> minificationSettingsOptionsMonitor, 
     IOptionsMonitor<HttpDancerSettings> httpDancerSettingsOptionsMonitor, 
     IFileSystemDataProvider fileSystemDataProvider,
+    IHtmlMinifier htmlMinifier,
     IHttpClient defaultApiClient) : IFileSystemDownloadRunner
 {
     public async Task<bool> Run(string[] urls, bool crawlLinkedPages = false)
@@ -55,16 +56,15 @@ public class FileSystemDownloadRunner(
         return downloadResult;
     }
     
-    private static string[] ExcludedUrlParts = ["~", "-/media", "/images", "/english"];
 
-    private static UrlInformation? GetUrlInformation(DownloadResponse downloadResponse)
+    private static UrlInformation? GetUrlInformation(DownloadResponse downloadResponse, string[]? excludePaths = null)
     {
         if (string.IsNullOrWhiteSpace(downloadResponse.Value.Url))
         {
             return null;
         }
 
-        var path = UrlNaming.GetPath(downloadResponse.Value.Url, ExcludedUrlParts).Trim('/').Replace("/", "\\");
+        var path = UrlNaming.GetPath(downloadResponse.Value.Url, excludePaths ?? []).Trim('/').Replace("/", "\\");
         var name = UrlNaming.GetName(downloadResponse.Value.Url, true);
         var extension = MimeTypes.GetExtension(downloadResponse.Value.ContentType);
 
@@ -99,7 +99,7 @@ public class FileSystemDownloadRunner(
             return;
         }
     
-        var urlInformation = GetUrlInformation(downloadResponse);
+        var urlInformation = GetUrlInformation(downloadResponse, []);
 
         if (urlInformation is null)
         {
@@ -153,7 +153,8 @@ public class FileSystemDownloadRunner(
 
     private async Task<bool?> HandleShouldReadBodyAsync(ResponseMessage responseMessage)
     {
-        var contentTypeShouldDownloadContent = true; // responseMessage.ContentType?.IsMatch("text/*") is true;
+        var httpDancerSeSettingsMonitorValue = httpDancerSettingsOptionsMonitor.CurrentValue;
+        var contentTypeShouldDownloadContent = responseMessage.ContentType?.IsMatch(httpDancerSeSettingsMonitorValue.AllowedContentTypes) is true;
 
         logger.LogDebug("ShouldReadBody? Url={Url}, ContentType={ContentType}, Decision={Decision}", responseMessage.Url, responseMessage.ContentType, contentTypeShouldDownloadContent);
         return contentTypeShouldDownloadContent;
@@ -173,7 +174,7 @@ public class FileSystemDownloadRunner(
     {
         var remainingBudget = Math.Max(0, status.MaxRequests - status.ScheduledCount);
 
-        logger.LogInformation(
+        logger.LogDebug(
             "Status: Processed={Processed}/{MaxRequests}, Pending={Pending}, InFlight={InFlight}, Scheduled={Scheduled}, RemainingBudget={RemainingBudget}, EstimatedRemaining={Remaining}",
             status.ProcessedCount,
             status.MaxRequests,
@@ -208,7 +209,7 @@ public class FileSystemDownloadRunner(
         string minifiedUtf8EncodedHtmlString;
         try
         {
-            minifiedUtf8EncodedHtmlString = AngleSharpHtmlMinifier.Minify(utf8EncodedHtmlString, minificationSettingsOptionsMonitor.CurrentValue.RemoveSelectors);
+            minifiedUtf8EncodedHtmlString = htmlMinifier.Minify(utf8EncodedHtmlString, minificationSettingsOptionsMonitor.CurrentValue.RemoveSelectors);
         }
         catch (Exception exception)
         {

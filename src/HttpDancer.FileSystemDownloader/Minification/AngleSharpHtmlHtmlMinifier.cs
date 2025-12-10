@@ -8,11 +8,11 @@ using AngleSharp.Html.Parser;
 namespace HttpDancer.FileSystemDownloader.Minification;
 
 /// <summary>
-/// HTML minifier powered by AngleSharp. Removes comments, collapses/normalizes whitespace,
+/// HTML htmlMinifier powered by AngleSharp. Removes comments, collapses/normalizes whitespace,
 /// trims text nodes, prunes empty elements (when safe), and optionally removes elements
 /// matching user-provided CSS selectors.
 /// </summary>
-public static class AngleSharpHtmlMinifier
+public class AngleSharpHtmlHtmlMinifier : IHtmlMinifier
 {
     private static readonly HashSet<string> VoidElements = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -20,7 +20,7 @@ public static class AngleSharpHtmlMinifier
         "param","source","track","wbr"
     };
 
-    public static string Minify(string utf8EncodedHtmlString, IEnumerable<string>? selectorsToRemove = null)
+    public string Minify(string utf8EncodedHtmlString, IEnumerable<string>? selectorsToRemove = null)
     {
         if (string.IsNullOrWhiteSpace(utf8EncodedHtmlString))
         {

@@ -71,7 +71,7 @@ public class DefaultHttpClient(
 
         var correlationId = correlationIdProvider.GetCorrelationId();
 
-        logger.LogInformation(
+        logger.LogDebug(
             "Sending {Method} requestMessage to {Uri} (CorrelationId={CorrelationId})",
             method,
             uri,
@@ -213,7 +213,7 @@ public class DefaultHttpClient(
             if (cancellationToken.IsCancellationRequested)
             {
                 // Outer caller cancellation
-                logger.LogInformation(
+                logger.LogDebug(
                     "HTTP {Method} requestMessage to {Uri} was cancelled by caller after {ElapsedMs} ms. CorrelationId={CorrelationId}",
                     method,
                     uri,
@@ -223,7 +223,7 @@ public class DefaultHttpClient(
             else if (requestMessage.CancellationToken.IsCancellationRequested)
             {
                 // Per-requestMessage cancellation token
-                logger.LogInformation(
+                logger.LogDebug(
                     "HTTP {Method} requestMessage to {Uri} was cancelled by per-requestMessage token after {ElapsedMs} ms. CorrelationId={CorrelationId}",
                     method,
                     uri,
@@ -245,7 +245,7 @@ public class DefaultHttpClient(
             else
             {
                 // Fallback – should rarely hit if all cases above are covered
-                logger.LogInformation(
+                logger.LogDebug(
                     oce,
                     "HTTP {Method} requestMessage to {Uri} was cancelled (ElapsedMs={ElapsedMs}). CorrelationId={CorrelationId}",
                     method,
@@ -273,7 +273,7 @@ public class DefaultHttpClient(
             {
                 Uri = uri,
                 StatusCode = System.Net.HttpStatusCode.ServiceUnavailable,
-                Message = httpException.Message,
+                Message = $"Request failed: {httpException.Message}",
                 Headers = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase),
                 CorrelationId = correlationId
             };
@@ -294,7 +294,7 @@ public class DefaultHttpClient(
             {
                 Uri = uri,
                 StatusCode = System.Net.HttpStatusCode.InternalServerError,
-                Message = exception.Message,
+                Message = $"Unexpected send error: {exception.Message}",
                 Headers = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase),
                 CorrelationId = correlationId
             };

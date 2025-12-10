@@ -36,8 +36,8 @@ public class FileSystemDataProvider(IOptionsMonitor<FileSystemDataSettings> file
 
         CreateDirectory(relativePathWithFilename);
 
-        var pathAndFilename = CreatePath(relativePathWithFilename);
-        
+        var pathAndFilename = CreateSafePath(relativePathWithFilename);
+
         var target = overwrite ? pathAndFilename : GetNextAvailableFileName(pathAndFilename);
 
         await File.WriteAllTextAsync(target, content, Encoding.UTF8, cancellationToken);
@@ -52,8 +52,8 @@ public class FileSystemDataProvider(IOptionsMonitor<FileSystemDataSettings> file
 
         CreateDirectory(relativePathWithFilename);
 
-        var pathAndFilename = CreatePath(relativePathWithFilename);
-        
+        var pathAndFilename = CreateSafePath(relativePathWithFilename);
+
         var target = overwrite ? pathAndFilename : GetNextAvailableFileName(pathAndFilename);
 
         await File.WriteAllBytesAsync(target, content, cancellationToken);
@@ -145,6 +145,15 @@ public class FileSystemDataProvider(IOptionsMonitor<FileSystemDataSettings> file
     }
     
     private string CreatePath(string filename) => Path.Join(_baseDirectory, filename.Trim('/').Replace('/', '\\'));
+
+    private string CreateSafePath(string relativePathWithFilename)
+    {
+        var path = CreatePath(relativePathWithFilename);
+        var directory = Path.GetDirectoryName(path) ?? string.Empty;
+        var file = Path.GetFileName(path);
+        var safeFile = EnsureMaxFileNameLength(file);
+        return Path.Combine(directory, safeFile);
+    }
     
     private string GetNextAvailableFileName(string filename)
     {
