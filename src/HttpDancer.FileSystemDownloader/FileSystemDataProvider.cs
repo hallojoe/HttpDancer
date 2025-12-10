@@ -1,12 +1,13 @@
 using System.Text;
+using HttpDancer.FileSystemDownloader.Configuration;
 using Microsoft.Extensions.Options;
 
 namespace HttpDancer.FileSystemDownloader;
 
-public class FileSystemDataProvider(IOptionsMonitor<FileSystemDataSettings> fileSystemDataSettingsOptionsMonitor) : IFileSystemDataProvider
+public class FileSystemDataProvider(IOptionsMonitor<FileSystemDownloaderSettings> fileSystemDataSettingsOptionsMonitor) : IFileSystemDataProvider
 {
     private readonly string _baseDirectory = 
-        fileSystemDataSettingsOptionsMonitor.CurrentValue.Workspace ?? throw new ArgumentNullException(nameof(FileSystemDataSettings.Workspace));
+        fileSystemDataSettingsOptionsMonitor.CurrentValue.Workspace ?? throw new ArgumentNullException(nameof(FileSystemDownloaderSettings.Workspace));
     
     public string[] List(string searchPattern)
     {
@@ -26,7 +27,7 @@ public class FileSystemDataProvider(IOptionsMonitor<FileSystemDataSettings> file
         
         return await File.ReadAllTextAsync(pathAndFilename, Encoding.UTF8, cancellationToken);
     }
-
+    
     public async Task WriteStringAsync(string relativePathWithFilename, string content, bool overwrite = true, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(relativePathWithFilename) || string.IsNullOrWhiteSpace(content))

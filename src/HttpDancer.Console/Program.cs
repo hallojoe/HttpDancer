@@ -1,5 +1,6 @@
 ﻿using HttpDancer.Core.Configuration;
 using HttpDancer.FileSystemDownloader;
+using HttpDancer.FileSystemDownloader.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
@@ -23,17 +24,11 @@ public class Program
         using var scope = host.Services.CreateScope();
 
         // Get required services
-        var httpDancerSettingsOptionsMonitor = scope.ServiceProvider.GetRequiredService<IOptionsMonitor<HttpDancerSettings>>();
-
-        var fileSystemDataProvider = scope.ServiceProvider.GetRequiredService<IFileSystemDataProvider>();
         var fileSystemDownloadRunner = scope.ServiceProvider.GetRequiredService<IFileSystemDownloadRunner>();
-        var fileSystemDataSettings = scope.ServiceProvider.GetRequiredService<IOptionsMonitor<FileSystemDataSettings>>();
+        var urlProvider = scope.ServiceProvider.GetRequiredService<IUrlProvider>();
         
-        // Read URLs from options 
-        var urlsWithNoQuerystring = (await fileSystemDataProvider.ReadAllLinesAsync(fileSystemDataSettings.CurrentValue.HrefListPaths))
-            .Select(url => url.Split('?').First()).Distinct().ToArray();
-        
-        var y = await fileSystemDownloadRunner.Run(urlsWithNoQuerystring, true);
+        var urls = await urlProvider.GetUrlsAsync();
+        var _ = await fileSystemDownloadRunner.Run(urls, false);
         
         System.Console.WriteLine("Crawler finished. Press any key to exit...");
         System.Console.ReadKey();

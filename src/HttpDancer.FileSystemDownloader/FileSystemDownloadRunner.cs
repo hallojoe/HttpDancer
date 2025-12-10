@@ -205,11 +205,11 @@ public class FileSystemDownloadRunner(
             logger.LogDebug("Empty HTML content for {Url}, skipping minification.", downloadResponse.Value.Url);
             return downloadResponse;
         }
-
+        
         string minifiedUtf8EncodedHtmlString;
         try
         {
-            minifiedUtf8EncodedHtmlString = htmlMinifier.Minify(utf8EncodedHtmlString, minificationSettingsOptionsMonitor.CurrentValue.RemoveSelectors);
+            minifiedUtf8EncodedHtmlString = htmlMinifier.Minify(utf8EncodedHtmlString);
         }
         catch (Exception exception)
         {

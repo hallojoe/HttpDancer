@@ -4,6 +4,8 @@ using AngleSharp.Dom;
 using AngleSharp.Html;
 using AngleSharp.Html.Dom;
 using AngleSharp.Html.Parser;
+using HttpDancer.FileSystemDownloader.Configuration;
+using Microsoft.Extensions.Options;
 
 namespace HttpDancer.FileSystemDownloader.Minification;
 
@@ -12,7 +14,7 @@ namespace HttpDancer.FileSystemDownloader.Minification;
 /// trims text nodes, prunes empty elements (when safe), and optionally removes elements
 /// matching user-provided CSS selectors.
 /// </summary>
-public class AngleSharpHtmlHtmlMinifier : IHtmlMinifier
+public class AngleSharpHtmlMinifier(IOptionsMonitor<MinificationSettings> minificationOptions) : IHtmlMinifier
 {
     private static readonly HashSet<string> VoidElements = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -20,7 +22,7 @@ public class AngleSharpHtmlHtmlMinifier : IHtmlMinifier
         "param","source","track","wbr"
     };
 
-    public string Minify(string utf8EncodedHtmlString, IEnumerable<string>? selectorsToRemove = null)
+    public string Minify(string utf8EncodedHtmlString)
     {
         if (string.IsNullOrWhiteSpace(utf8EncodedHtmlString))
         {
@@ -45,10 +47,25 @@ public class AngleSharpHtmlHtmlMinifier : IHtmlMinifier
 
         try
         {
-            RemoveBySelector(document, selectorsToRemove);
-            RemoveComments(document);
-            NormalizeTextNodes(document);
-            RemoveEmptyElements(document);
+            if (minificationOptions.CurrentValue.RemoveSelectors?.Length > 0)
+            {
+                RemoveBySelector(document, minificationOptions.CurrentValue.RemoveSelectors);
+            }
+            
+            if (minificationOptions.CurrentValue.RemoveComments)
+            {
+                RemoveComments(document);
+            }
+
+            if (minificationOptions.CurrentValue.NormalizeTextNodes)
+            {
+                NormalizeTextNodes(document);
+            }
+
+            if (minificationOptions.CurrentValue.RemoveEmptyElements)
+            {
+                RemoveEmptyElements(document);
+            }
         }
         catch (Exception)
         {

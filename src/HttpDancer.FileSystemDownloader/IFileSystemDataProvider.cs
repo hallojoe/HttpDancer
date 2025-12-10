@@ -2,7 +2,6 @@ namespace HttpDancer.FileSystemDownloader;
 
 public interface IFileSystemDataProvider
 {
-
     string[] List(string searchPattern);
     void CreateDirectory(string pathAndOptionalFilename);
     Task<string> ReadStringAsync(string filename, CancellationToken cancellationToken = default);

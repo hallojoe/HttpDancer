@@ -7,7 +7,7 @@ public partial class LinkParser
 {
     // Matches href="...", src='...', href=..., etc.
     // Groups:
-    //  1: attribute name (href|src|...)
+    //  1: attribute name (href|src|...see expression)
     //  2: double-quoted value
     //  3: single-quoted value
     //  4: unquoted value

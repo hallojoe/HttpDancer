@@ -2,5 +2,5 @@ namespace HttpDancer.FileSystemDownloader.Minification;
 
 public interface IHtmlMinifier
 {
-    string Minify(string utf8EncodedHtmlString, IEnumerable<string>? selectorsToRemove = null);
+    string Minify(string utf8EncodedHtmlString);
 }
