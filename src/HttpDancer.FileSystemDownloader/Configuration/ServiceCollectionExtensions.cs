@@ -13,6 +13,7 @@ public static class ServiceCollectionExtensions
         services.AddOptions<MinificationSettings>().BindConfiguration(MinificationSettings.Key);
         services.AddSingleton<IHtmlMetaTagProvider, AngleSharpHtmlMetaTagProvider>();
         services.AddSingleton<IHtmlMinifier, AngleSharpHtmlMinifier>();
+        services.AddSingleton<IHtmlStringsProvider, AngleSharpHtmlStringsProvider>();
         services.AddSingleton<IFileSystemDownloadRunner, FileSystemDownloadRunner>();
         services.AddSingleton<IFileSystemDataProvider, FileSystemDataProvider>();
         services.AddSingleton<IUrlProvider, FileSystemUrlProvider>();

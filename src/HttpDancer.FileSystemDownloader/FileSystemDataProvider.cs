@@ -115,6 +115,37 @@ public class FileSystemDataProvider(IOptionsMonitor<FileSystemDownloaderSettings
         
         return result.Distinct().ToArray();
     }
+
+    public async Task<Dictionary<string, string>> ReadStringsAsync(string path, string searchPattern = "*", CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(_baseDirectory) || string.IsNullOrWhiteSpace(path))
+        {
+            return [];
+        }
+
+        var targetDirectory = Path.Join(_baseDirectory, path.Trim('/').Replace('/', '\\'));
+        if (Directory.Exists(targetDirectory) is false)
+        {
+            return [];
+        }
+
+        var pattern = string.IsNullOrWhiteSpace(searchPattern) ? "*" : searchPattern;
+        var files = Directory.GetFiles(targetDirectory, pattern, SearchOption.AllDirectories);
+
+        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var file in files)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var content = await File.ReadAllTextAsync(file, Encoding.UTF8, cancellationToken);
+            var key = Path.GetRelativePath(targetDirectory, file);
+
+            result[key] = content;
+        }
+
+        return result;
+    }
     
     public string EnsureMaxFileNameLength(string fileName, int maxLength = 255)
     {

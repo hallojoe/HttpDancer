@@ -9,4 +9,13 @@ public interface IFileSystemDataProvider
     Task WriteBytesAsync(string relativePathWithFilename, byte[] content, bool overwrite = true, CancellationToken cancellationToken = default);
     Task<string[]> ReadAllLinesAsync(string filename, CancellationToken cancellationToken = default);
     Task<string[]> ReadAllLinesAsync(string[] filenames, CancellationToken cancellationToken = default);
+    
+    /// <summary>
+    /// Searches for things matching the specified pattern and returns their contents as a dictionary. Where key is some identifier and value is the string content.
+    /// </summary>
+    /// <param name="path"></param>
+    /// <param name="searchPattern"></param>
+    /// <param name="cancellationToken"></param>
+    /// <returns></returns>
+    Task<Dictionary<string, string>> ReadStringsAsync(string path, string searchPattern = "*", CancellationToken cancellationToken = default);
 }

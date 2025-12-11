@@ -12,11 +12,11 @@ public partial class LinkParser
     //  3: single-quoted value
     //  4: unquoted value
 
-    public static Link[] GetLinks(string utf8EncodedHtmlString, string sourceUrl)
+    public static Link[] GetLinks(string utf8EncodedString, string sourceUrl)
     {
-        if (string.IsNullOrWhiteSpace(utf8EncodedHtmlString))
+        if (string.IsNullOrWhiteSpace(utf8EncodedString))
         {
-            throw new ArgumentNullException(nameof(utf8EncodedHtmlString));
+            throw new ArgumentNullException(nameof(utf8EncodedString));
         }
 
         if (string.IsNullOrWhiteSpace(sourceUrl))
@@ -32,7 +32,7 @@ public partial class LinkParser
         var candidates = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         // Extract from HTML-like attributes (href/src)
-        foreach (Match match in HtmlAttributeUrlRegularExpression().Matches(utf8EncodedHtmlString))
+        foreach (Match match in HtmlAttributeUrlRegularExpression().Matches(utf8EncodedString))
         {
             var value = match.Groups[1].Success
                 ? match.Groups[1].Value
@@ -57,7 +57,7 @@ public partial class LinkParser
         }
 
         // Extract from plain text
-        foreach (Match match in PlainTextUrlRegularExpression().Matches(utf8EncodedHtmlString))
+        foreach (Match match in PlainTextUrlRegularExpression().Matches(utf8EncodedString))
         {
             var value = match.Value.Trim();
             if (!string.IsNullOrEmpty(value))
