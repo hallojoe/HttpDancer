@@ -1,4 +1,6 @@
-﻿using HttpDancer.Core.Configuration;
+﻿using System.Text.Json;
+using HttpDancer.Core.Configuration;
+using HttpDancer.Core.Naming;
 using HttpDancer.FileSystemDownloader;
 using HttpDancer.FileSystemDownloader.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -17,6 +19,8 @@ public class Program
         // Configure application
         builder.ConfigureApplication();
 
+        // 
+        
         // Build host
         using var host = builder.Build();
 
@@ -24,11 +28,50 @@ public class Program
         using var scope = host.Services.CreateScope();
 
         // Get required services
+        var urlNamingOptions = scope.ServiceProvider.GetRequiredService<IOptions<UrlNamingOptions>>();
+        var urlNameProvider = scope.ServiceProvider.GetRequiredService<IUrlNamer>();
         var fileSystemDownloadRunner = scope.ServiceProvider.GetRequiredService<IFileSystemDownloadRunner>();
         var urlProvider = scope.ServiceProvider.GetRequiredService<IUrlProvider>();
+
+        var fileSystemDownloaderSettings = scope.ServiceProvider.GetRequiredService<IOptions<FileSystemDownloaderSettings>>();
+        var dataProvider = scope.ServiceProvider.GetRequiredService<IFileSystemDataProvider>();
         
+
         var urls = await urlProvider.GetUrlsAsync();
-        var _ = await fileSystemDownloadRunner.Run(urls, false);
+
+     //   var urlNames = urls.Select(x => urlNameProvider.GetNameAndPath(x)).ToList();
+        
+        
+        
+        var _ = await fileSystemDownloadRunner.Run(urls, true);
+
+        
+        // var dataFiles = Directory.GetFiles(fileSystemDownloaderSettings.Value.Workspace!, "*.data.json", SearchOption.AllDirectories);
+
+        // var categories = new List<string>();
+        // foreach (var dataFile in dataFiles)
+        // {
+        //     var dataContent = await dataProvider.ReadStringAsync(dataFile.Replace(fileSystemDownloaderSettings.Value.Workspace!, ""));
+        //     if (string.IsNullOrWhiteSpace(dataContent))
+        //     {
+        //         continue;
+        //     }
+        //     
+        //     var data = JsonSerializer.Deserialize<Dictionary<string, string?>>(dataContent);
+        //     if (data is null)
+        //     {
+        //         continue;
+        //     }
+        //
+        //     if (data.TryGetValue("pageTag", out var value))
+        //     {
+        //         if(!string.IsNullOrWhiteSpace(value?.Trim())) categories.Add(value.Trim());
+        //     }
+        //
+        // }
+
+        // await dataProvider.WriteStringAsync("categories.txt", string.Join(Environment.NewLine, categories.Distinct().ToArray()));
+        
         
         System.Console.WriteLine("Crawler finished. Press any key to exit...");
         System.Console.ReadKey();

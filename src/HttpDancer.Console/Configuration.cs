@@ -2,6 +2,7 @@ using HttpDancer.Core.Configuration;
 using HttpDancer.Core.Http;
 using HttpDancer.Core.Http.Downloading;
 using HttpDancer.FileSystemDownloader.Configuration;
+using HttpDancer.Html;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -31,6 +32,9 @@ public static class ConfigurationExtensions
 
         builder.Services.AddDefaultHttpClient(builder.Configuration);
         builder.Services.AddFileSystemDownloader(builder.Configuration);
+        builder.Services.AddUrlNaming(builder.Configuration);
+
+        builder.Services.AddScoped<IHtmlQuery, AngleSharpHtmlQuery>();
 
         return builder;
     }

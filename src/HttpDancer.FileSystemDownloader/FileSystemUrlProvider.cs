@@ -9,7 +9,6 @@ public class FileSystemUrlProvider(ILogger<FileSystemUrlProvider> logger, IOptio
     public async Task<string[]> GetUrlsAsync()
     {
         var urlsWithNoQuerystring = (await provider.ReadAllLinesAsync(options.CurrentValue.UrlPaths))
-            .Select(url => url.Split('?').First())
             .Distinct();
         var result = new List<string>();
         foreach (var url in urlsWithNoQuerystring)

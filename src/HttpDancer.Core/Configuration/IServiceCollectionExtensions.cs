@@ -1,8 +1,15 @@
 using HttpDancer.Core.Http.Clients;
 using HttpDancer.Core.Http.Observability;
+using HttpDancer.Core.Naming;
+using HttpDancer.Core.Naming.Hashing;
+using HttpDancer.Core.Naming.Query;
+using HttpDancer.Core.Naming.Segments;
+using HttpDancer.Core.Naming.Slug;
+using HttpDancer.Core.Parsing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using PathSegmentNormalizer = HttpDancer.Core.Naming.Segments.PathSegmentNormalizer;
 
 namespace HttpDancer.Core.Configuration;
 
@@ -11,6 +18,7 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddHttpDancerSettings(this IServiceCollection services, IConfiguration configuration)
     {
         services.Configure<HttpDancerSettings>(configuration.GetSection(HttpDancerSettings.Key));
+        services.Configure<UrlNamingOptions>(configuration.GetSection(UrlNamingOptions.Key));
         return services;
     }
     
@@ -57,6 +65,28 @@ public static class ServiceCollectionExtensions
         })
         .AddHttpMessageHandler<CorrelationIdHandler>();
         
+        return services;
+    }
+
+    public static IServiceCollection AddUrlNaming(this IServiceCollection services, IConfiguration? configuration = null)
+    {
+        if (configuration is not null)
+        {
+            services.AddOptions<UrlNamingOptions>().Bind(configuration.GetSection(UrlNamingOptions.Key));
+        }
+        else
+        {
+            services.AddOptions<UrlNamingOptions>();
+        }
+
+        services.AddSingleton<IPathSegmentFilter, PathSegmentFilter>();
+        services.AddSingleton<IPathSegmentNormalizer, PathSegmentNormalizer>();
+        services.AddSingleton<IHashGenerator, Base62HashGenerator>();
+        services.AddSingleton<IQueryStringProcessor, QueryStringProcessor>();
+        services.AddSingleton<ISlugify, Slugify>();
+        services.AddSingleton<IUrlNamer, UrlNamer>();
+        services.AddSingleton<IDateTimeParser, DateTimeParser>();
+
         return services;
     }
 }

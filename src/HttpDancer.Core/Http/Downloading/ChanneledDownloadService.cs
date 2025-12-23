@@ -6,13 +6,14 @@ using Microsoft.Extensions.Logging;
 namespace HttpDancer.Core.Http.Downloading;
 
 /// <summary>
-/// Channel-based downloader with controlled concurrency and a total request budget.
-/// - Concurrency: fixed worker pool (MaxConcurrentRequests).
-/// - Budget: caps total scheduled downloads (MaxRequests).
-/// - Dynamic enqueue: producers can add URLs anytime until the writer is completed.
-/// - Dedupe: prevents duplicate scheduling and re-processing (case-insensitive).
-/// - Pre-download hook: skip once / skip permanently / proceed.
-/// - Completion callback per finished download.
+/// Channel-backed downloader that separates concerns for clarity:
+/// - Producers: any caller can enqueue URLs while the channel writer is open.
+/// - Queue: unbounded channel holds URLs until workers can pick them up.
+/// - Workers: fixed pool (MaxConcurrentRequests) that pulls URLs, skips duplicates, asks the hook if the URL should run, and then downloads.
+/// - Budget: MaxRequests caps total downloads (not just concurrency); once reached, scheduling stops and the writer is completed.
+/// - Hooks: optional RequestAsync to decide per-URL (skip once, skip permanently, or proceed).
+/// - Callbacks: non-blocking ResponseAsync and StatusAsync run on a separate callback queue.
+/// - Shutdown: monitor loop completes the writer when the budget is hit and the queue/in-flight work are empty.
 /// </summary>
 public class ChanneledDownloadService : IDownloadService
 {
@@ -21,17 +22,17 @@ public class ChanneledDownloadService : IDownloadService
     private readonly ChanneledDownloadRequest _channeledDownloadRequest;
 
     /// <summary>
-    /// URLs that have been fully processed (success or permanently skipped). Case-insensitive.
+    /// URLs that have been fully processed (success or permanently skipped). Case-insensitive so "A" and "a" count as the same target.
     /// </summary>
     private readonly ConcurrentDictionary<string, byte> _processedUrls = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
-    /// URLs that are scheduled/in-flight to prevent concurrent duplicates.
+    /// URLs currently scheduled or in-flight; prevents two workers from handling the same URL simultaneously.
     /// </summary>
     private readonly ConcurrentDictionary<string, byte> _scheduledUrls = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
-    /// Unbounded channel -> no backpressure surprises; concurrency is set by worker count.
+    /// Unbounded channel that buffers incoming URLs; worker count controls throughput instead of queue size.
     /// </summary>
     private readonly Channel<string> _channel = Channel.CreateUnbounded<string>(new UnboundedChannelOptions
     {
@@ -41,7 +42,7 @@ public class ChanneledDownloadService : IDownloadService
     });
 
     /// <summary>
-    /// Callback queue so response/status handlers do not block download workers.
+    /// Bounded callback queue so response/status handlers never block download workers; oldest callbacks are dropped if the queue overflows.
     /// </summary>
     private readonly Channel<CallbackWork> _callbackChannel = Channel.CreateBounded<CallbackWork>(new BoundedChannelOptions(256)
     {
@@ -53,25 +54,28 @@ public class ChanneledDownloadService : IDownloadService
     // Live counters/flags
 
     /// <summary>
-    /// How many downloads have been reserved against MaxRequests?
+    /// Total number of downloads that have been scheduled against MaxRequests (monotonic).
     /// </summary>
     private int _requestCount;            
     
     /// <summary>
-    /// Currently downloading
+    /// Count of worker operations currently downloading a URL.
     /// </summary>
     private int _inFlight;                
     
     /// <summary>
-    /// Items sitting in the channel
+    /// Approximate items still sitting in the channel (enqueued minus dequeued).
     /// </summary>
     private int _pending;                 
 
     /// <summary>
-    /// 0/1: Ensure we only Complete the writer once.
+    /// 0/1 guard so we only complete the channel writer a single time.
     /// </summary>
     private int _writerCompleted;        
     
+    /// <summary>
+    /// Set when the download budget is hit; tells the monitor to stop accepting new work.
+    /// </summary>
     private volatile bool _budgetExhausted;
 
     public ChanneledDownloadService(
@@ -232,7 +236,8 @@ public class ChanneledDownloadService : IDownloadService
     }
 
     /// <summary>
-    /// Worker: pulls URLs from the channel, applies hooks/dedupe/budget, and downloads.
+    /// Worker flow: take a URL from the channel, skip if already processed, ask RequestAsync if present,
+    /// block concurrent duplicates, reserve against the budget, download via IHttpClient, then queue callbacks.
     /// </summary>
     private async Task WorkerLoopAsync(CancellationToken token)
     {

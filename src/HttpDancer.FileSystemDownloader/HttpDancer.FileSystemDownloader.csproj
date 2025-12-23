@@ -15,6 +15,7 @@
 
     <ItemGroup>
       <ProjectReference Include="..\HttpDancer.Core\HttpDancer.Core.csproj" />
+      <ProjectReference Include="..\HttpDancer.Html\HttpDancer.Html.csproj" />
       <ProjectReference Include="..\HttpDancer.Utilities\HttpDancer.Utilities.csproj" />
     </ItemGroup>
 

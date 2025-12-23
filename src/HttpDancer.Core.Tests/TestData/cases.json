@@ -1,0 +1,32 @@
+[
+  {
+    "config": "configs/default.json",
+    "cases": [
+      { "url": "https://example.com/Docs/Guide.html?utm=1", "expectedPath": "docs", "expectedName": "guide" },
+      { "url": "https://example.com/media/photos/IMG_1234.JPG", "expectedPath": "media/photos", "expectedName": "img-1234-jpg" },
+      { "url": "https://example.com/", "expectedPath": "", "expectedName": "index" },
+      { "url": "https://example.com/blog/2024/10/Hello-World", "expectedPath": "blog/2024/10", "expectedName": "hello-world" },
+      { "url": "https://example.com/foo/bar/?a=1", "expectedPath": "foo/bar", "expectedName": "bar" },
+      { "url": "/mixed%20case/My_Page.aspx", "expectedPath": "mixed-case", "expectedName": "my-page" },
+      { "url": "https://Example.com/a/b/c.d.e", "expectedPath": "a/b", "expectedName": "c-d-e" },
+      { "url": "https://example.com//double//slashes//file.htm", "expectedPath": "double/slashes", "expectedName": "file" },
+      { "url": "https://example.com/a%20b/c%2Bd", "expectedPath": "a-b", "expectedName": "c-d" },
+      { "url": "https://example.com/café/Résumé.pdf", "expectedPath": "caf", "expectedName": "r-sum-pdf" }
+    ]
+  },
+  {
+    "config": "configs/slug-and-query-append.json",
+    "cases": [
+      { "url": "https://example.com/folder/page?id=42&Name=Test", "expectedPath": "folder", "expectedName": "page.id.42.name.test" },
+      { "url": "https://example.com/a%20b/c%2Bd?q=Hello+World", "expectedPath": "a-b", "expectedName": "c-d.q.hello-world" },
+      { "url": "https://example.com/news/article.html?utm_source=ad&id=99", "expectedPath": "news", "expectedName": "article.id.99" }
+    ]
+  },
+  {
+    "config": "configs/hash-host-strict.json",
+    "cases": [
+      { "url": "https://www.Example.com/Section/Page.html?id=42&Name=Test", "expectedPathStartsWith": "www.example.com/section", "expectedNameStartsWith": "page-", "expectedQueryHashLength": 11 },
+      { "url": "https://sub.domain.com/path/to/index.html", "expectedPathStartsWith": "sub.domain.com/path/to", "expectedName": "index", "expectedQueryHashLength": 0 }
+    ]
+  }
+]

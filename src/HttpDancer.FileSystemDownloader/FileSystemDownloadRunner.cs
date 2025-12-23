@@ -1,11 +1,12 @@
-using System;
 using System.Text;
 using System.Text.Json;
 using HttpDancer.Core.Configuration;
 using HttpDancer.Core.Http.Clients;
 using HttpDancer.Core.Http.Downloading;
+using HttpDancer.Core.Naming;
 using HttpDancer.Extensions;
-using HttpDancer.FileSystemDownloader.Minification;
+using HttpDancer.FileSystemDownloader.Data;
+using HttpDancer.Html;
 using HttpDancer.Utilities;
 using HttpDancer.Utilities.Parsing;
 using Microsoft.Extensions.Logging;
@@ -22,10 +23,12 @@ public interface IFileSystemDownloadRunner
 public class FileSystemDownloadRunner(
     ILoggerFactory loggerFactory, 
     ILogger<FileSystemDownloadRunner> logger,
+    IUrlNamer urlNamer,
     IOptionsMonitor<MinificationSettings> minificationSettingsOptionsMonitor, 
     IOptionsMonitor<HttpDancerSettings> httpDancerSettingsOptionsMonitor, 
     IFileSystemDataProvider fileSystemDataProvider,
-    IHtmlMinifier htmlMinifier,
+    IHtmlQuery htmlQuery,
+    IHtmlStringsProvider htmlStringsParser,
     IHttpClient defaultApiClient) : IFileSystemDownloadRunner
 {
     public async Task<bool> Run(string[] urls, bool crawlLinkedPages = false)
@@ -57,15 +60,16 @@ public class FileSystemDownloadRunner(
     }
     
 
-    private static UrlInformation? GetUrlInformation(DownloadResponse downloadResponse, string[]? excludePaths = null)
+    private UrlInformation? GetUrlInformation(DownloadResponse downloadResponse, string[]? excludePaths = null)
     {
         if (string.IsNullOrWhiteSpace(downloadResponse.Value.Url))
         {
             return null;
         }
 
-        var path = UrlNaming.GetPath(downloadResponse.Value.Url, excludePaths ?? []).Trim('/').Replace("/", "\\");
-        var name = UrlNaming.GetName(downloadResponse.Value.Url, true);
+        var urlNamingResult = urlNamer.GetNameAndPath(downloadResponse.Value.Url);
+        var path = urlNamingResult.Path;
+        var name = urlNamingResult.Name;
         var extension = MimeTypes.GetExtension(downloadResponse.Value.ContentType);
 
         return new UrlInformation {Url = downloadResponse.Value.Url, Path = path, Name = name, Extension = extension};        
@@ -107,8 +111,6 @@ public class FileSystemDownloadRunner(
             return;
         }
         
-        // fileSystemDataProvider.CreateDirectory(urlInformation.Path);
-        
         if (minificationSettingsOptionsMonitor.CurrentValue.Enabled)
         {
             logger.LogInformation("Minifying HTML for {Url}.", downloadResponse.Value.Url);
@@ -119,18 +121,27 @@ public class FileSystemDownloadRunner(
         logger.LogInformation("Saved content to {Path}", urlInformation.PathNameAndExtension);
 
         var metaDataJsonString = JsonSerializer.Serialize(downloadResponse.Value, new JsonSerializerOptions { WriteIndented = true });
-
+        
         await fileSystemDataProvider.WriteStringAsync($"{urlInformation.PathNameAndExtension}.json", metaDataJsonString);
         logger.LogDebug("Saved metadata JSON for {Url}.", downloadResponse.Value.Url);
 
+        
         var isTextual = downloadResponse.Value.ContentType!.IsMatch("text/*");
-
+        
         if (downloadResponse.Value.BodyBytes is null || isTextual is not true)
         {
             logger.LogDebug("Not crawling links for {Url} (non-textual content).", downloadResponse.Value.Url);
             return;
         }
 
+        var html = Encoding.UTF8.GetString(downloadResponse.Value.BodyBytes);
+        var dataDictionary = await htmlStringsParser.GetAsync(html, CancellationToken.None);
+        var dataJsonString = JsonSerializer.Serialize(dataDictionary, new JsonSerializerOptions { WriteIndented = true });
+        
+        await fileSystemDataProvider.WriteStringAsync($"{urlInformation.PathNameAndExtension}.data.json", dataJsonString);
+        logger.LogDebug("Saved data JSON for {Url}.", downloadResponse.Value.Url);
+        
+        
         if (crawlLinkedPages)
         {
             var utf8EncodedString = Encoding.UTF8.GetString(downloadResponse.Value.BodyBytes);
@@ -143,7 +154,7 @@ public class FileSystemDownloadRunner(
 
             var urls = LinkParser.GetLinks(utf8EncodedString, downloadResponse.Value.Url)
                 .DistinctBy(link => link.Uri.ToString())
-                .Select(url => url.Uri.ToString().Split('?').First())
+                .Select(url => url.Uri.ToString())
                 .ToArray();
 
             downloaderService.EnqueueUrls(urls);
@@ -209,7 +220,12 @@ public class FileSystemDownloadRunner(
         string minifiedUtf8EncodedHtmlString;
         try
         {
-            minifiedUtf8EncodedHtmlString = htmlMinifier.Minify(utf8EncodedHtmlString);
+            var minifiedResult = await htmlQuery.MinifyQueryAsync(
+                utf8EncodedHtmlString,
+                ["*"],
+                cancellationToken: CancellationToken.None);
+            
+            minifiedUtf8EncodedHtmlString = minifiedResult.FirstOrDefault()?.Value ?? utf8EncodedHtmlString;
         }
         catch (Exception exception)
         {
