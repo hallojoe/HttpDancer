@@ -1,14 +1,14 @@
 using System.Text;
 using System.Text.Json;
-using HttpDancer.Core.Configuration;
+using HttpDancer.Core;
 using HttpDancer.Core.Http.Clients;
 using HttpDancer.Core.Http.Downloading;
-using HttpDancer.Core.Naming;
 using HttpDancer.Extensions;
 using HttpDancer.FileSystemDownloader.Data;
 using HttpDancer.Html;
-using HttpDancer.Utilities;
-using HttpDancer.Utilities.Parsing;
+using HttpDancer.KnownMediaTypes;
+using HttpDancer.Naming;
+using HttpDancer.Parsing;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using MinificationSettings = HttpDancer.FileSystemDownloader.Configuration.MinificationSettings;
@@ -23,6 +23,8 @@ public interface IFileSystemDownloadRunner
 public class FileSystemDownloadRunner(
     ILoggerFactory loggerFactory, 
     ILogger<FileSystemDownloadRunner> logger,
+    IKnowMediaTypes mediaTypes,
+    ILinkParser linkParser,
     IUrlNamer urlNamer,
     IOptionsMonitor<MinificationSettings> minificationSettingsOptionsMonitor, 
     IOptionsMonitor<HttpDancerSettings> httpDancerSettingsOptionsMonitor, 
@@ -39,8 +41,8 @@ public class FileSystemDownloadRunner(
         var channeledDownloadRequest = new ChanneledDownloadRequest()
         {
             Urls = urls,
-            MaxConcurrentRequests = httpDancerSeSettingsMonitorValue.MaxConcurrentRequests,
-            MaxRequests = httpDancerSeSettingsMonitorValue.MaxRequests, 
+            MaxConcurrentRequests = httpDancerSeSettingsMonitorValue.DefaultClient.MaxConcurrentRequests,
+            MaxRequests = httpDancerSeSettingsMonitorValue.DefaultClient.MaxRequests, 
             RequestAsync = HandleRequestAsync,
             ShouldReadBodyAsync = HandleShouldReadBodyAsync,
             ResponseAsync = (channeledDownloadService, downloadResponse) => 
@@ -60,7 +62,7 @@ public class FileSystemDownloadRunner(
     }
     
 
-    private UrlInformation? GetUrlInformation(DownloadResponse downloadResponse, string[]? excludePaths = null)
+    private UrlAndPathInformation? GetUrlAndPathInformation(DownloadResponse downloadResponse, string[]? excludePaths = null)
     {
         if (string.IsNullOrWhiteSpace(downloadResponse.Value.Url))
         {
@@ -70,9 +72,9 @@ public class FileSystemDownloadRunner(
         var urlNamingResult = urlNamer.GetNameAndPath(downloadResponse.Value.Url);
         var path = urlNamingResult.Path;
         var name = urlNamingResult.Name;
-        var extension = MimeTypes.GetExtension(downloadResponse.Value.ContentType);
+        var extension = mediaTypes.GetExtension(downloadResponse.Value.ContentType);
 
-        return new UrlInformation {Url = downloadResponse.Value.Url, Path = path, Name = name, Extension = extension};        
+        return new UrlAndPathInformation {Url = downloadResponse.Value.Url, Path = path, Name = name, Extension = extension};        
     }
 
     private async Task HandleResponseAsync(ChanneledDownloadService downloaderService, DownloadResponse downloadResponse, bool crawlLinkedPages = false)
@@ -81,7 +83,7 @@ public class FileSystemDownloadRunner(
 
         if (string.IsNullOrWhiteSpace(downloadResponse.Value.Url))
         {
-            logger.LogDebug("Skipping response with empty URL.");
+            logger.LogDebug("Skipping response with empty URL. Should never happen, but here we are o_=");
             return;
         }
 
@@ -91,25 +93,60 @@ public class FileSystemDownloadRunner(
             return;
         }
 
-        if (downloadResponse.Value.ContentType.IsMatch(httpDancerSettingsOptionsMonitor.CurrentValue.AllowedContentTypes) is not true)
+        if (downloadResponse.Value.ContentType.IsMatch(httpDancerSettingsOptionsMonitor.CurrentValue.DefaultClient.AllowedContentTypes) is not true)
         {
             logger.LogInformation("Skipping {Url} due to disallowed content type {ContentType}.", downloadResponse.Value.Url, downloadResponse.Value.ContentType);
             return;
         }
+        
+        // Crawl links when body has bytes and crawlLinkedPages is true
+
+        if ( downloadResponse.Value.BodyBytes is { Length: > 0} && crawlLinkedPages)
+        {
+            var utf8EncodedString = Encoding.UTF8.GetString(downloadResponse.Value.BodyBytes);
+
+            if (!string.IsNullOrWhiteSpace(utf8EncodedString) && !string.IsNullOrWhiteSpace(downloadResponse.Value.Url))
+            {
+                var urls = linkParser.GetLinks(utf8EncodedString, downloadResponse.Value.Url)
+                    .DistinctBy(link => link.Uri.ToString())
+                    .Select(url => url.Uri.ToString())
+                    .ToArray();
+
+                downloaderService.EnqueueUrls(urls);
+
+                logger.LogInformation("Enqueued {Count} discovered links from {Url}.", urls.Length, downloadResponse.Value.Url);
+            }
+            logger.LogDebug("No crawlable content for {Url}.", downloadResponse.Value.Url);
+        }
+        else
+        {
+            logger.LogDebug("No crawlable content for {Url}.", downloadResponse.Value.Url);
+        }
+
+        // Resolve path and name for the response
+    
+        var urlAndPathInformation = GetUrlAndPathInformation(downloadResponse, []);
+
+        if (urlAndPathInformation is null)
+        {
+            logger.LogDebug("Unable to resolve UrlAndPathInformation for {Url}.", downloadResponse.Value.Url);
+            return;
+        }
+
+        // Persist metadata
+
+        var metaDataJsonString = JsonSerializer.Serialize(downloadResponse.Value, new JsonSerializerOptions { WriteIndented = true });
+        
+        await fileSystemDataProvider.WriteStringAsync($"{urlAndPathInformation.PathNameAndExtension}.json", metaDataJsonString);
+        logger.LogDebug("Saved metadata JSON for {Url}.", downloadResponse.Value.Url);
 
         if (downloadResponse.Value.BodyBytes is not { Length: > 0 })
         {
-            logger.LogInformation("Skipping {Url} because BodyBytes is empty.", downloadResponse.Value.Url);
+            logger.LogInformation("Skipping further processing of {Url} because BodyBytes is empty.", downloadResponse.Value.Url);
             return;
         }
-    
-        var urlInformation = GetUrlInformation(downloadResponse, []);
 
-        if (urlInformation is null)
-        {
-            logger.LogDebug("Unable to resolve UrlInformation for {Url}.", downloadResponse.Value.Url);
-            return;
-        }
+        // Persist content
         
         if (minificationSettingsOptionsMonitor.CurrentValue.Enabled)
         {
@@ -117,14 +154,11 @@ public class FileSystemDownloadRunner(
             downloadResponse = await MinifyHtml(downloadResponse);
         }
         
-        await fileSystemDataProvider.WriteBytesAsync(urlInformation.PathNameAndExtension, downloadResponse.Value.BodyBytes!);
-        logger.LogInformation("Saved content to {Path}", urlInformation.PathNameAndExtension);
+        await fileSystemDataProvider.WriteBytesAsync(urlAndPathInformation.PathNameAndExtension, downloadResponse.Value.BodyBytes!);
+        logger.LogInformation("Saved content to {Path}", urlAndPathInformation.PathNameAndExtension);
 
-        var metaDataJsonString = JsonSerializer.Serialize(downloadResponse.Value, new JsonSerializerOptions { WriteIndented = true });
         
-        await fileSystemDataProvider.WriteStringAsync($"{urlInformation.PathNameAndExtension}.json", metaDataJsonString);
-        logger.LogDebug("Saved metadata JSON for {Url}.", downloadResponse.Value.Url);
-
+        // Persist data
         
         var isTextual = downloadResponse.Value.ContentType!.IsMatch("text/*");
         
@@ -138,34 +172,14 @@ public class FileSystemDownloadRunner(
         var dataDictionary = await htmlStringsParser.GetAsync(html, CancellationToken.None);
         var dataJsonString = JsonSerializer.Serialize(dataDictionary, new JsonSerializerOptions { WriteIndented = true });
         
-        await fileSystemDataProvider.WriteStringAsync($"{urlInformation.PathNameAndExtension}.data.json", dataJsonString);
+        await fileSystemDataProvider.WriteStringAsync($"{urlAndPathInformation.PathNameAndExtension}.data.json", dataJsonString);
         logger.LogDebug("Saved data JSON for {Url}.", downloadResponse.Value.Url);
-        
-        
-        if (crawlLinkedPages)
-        {
-            var utf8EncodedString = Encoding.UTF8.GetString(downloadResponse.Value.BodyBytes);
-
-            if (string.IsNullOrWhiteSpace(utf8EncodedString) || string.IsNullOrWhiteSpace(downloadResponse.Value.Url))
-            {
-                logger.LogDebug("No crawlable content for {Url}.", downloadResponse.Value.Url);
-                return;
-            }
-
-            var urls = LinkParser.GetLinks(utf8EncodedString, downloadResponse.Value.Url)
-                .DistinctBy(link => link.Uri.ToString())
-                .Select(url => url.Uri.ToString())
-                .ToArray();
-
-            downloaderService.EnqueueUrls(urls);
-            logger.LogInformation("Enqueued {Count} discovered links from {Url}.", urls.Length, downloadResponse.Value.Url);
-        }
     }
 
     private async Task<bool?> HandleShouldReadBodyAsync(ResponseMessage responseMessage)
     {
         var httpDancerSeSettingsMonitorValue = httpDancerSettingsOptionsMonitor.CurrentValue;
-        var contentTypeShouldDownloadContent = responseMessage.ContentType?.IsMatch(httpDancerSeSettingsMonitorValue.AllowedContentTypes) is true;
+        var contentTypeShouldDownloadContent = responseMessage.ContentType?.IsMatch(httpDancerSeSettingsMonitorValue.DefaultClient.AllowedContentTypes) is true;
 
         logger.LogDebug("ShouldReadBody? Url={Url}, ContentType={ContentType}, Decision={Decision}", responseMessage.Url, responseMessage.ContentType, contentTypeShouldDownloadContent);
         return contentTypeShouldDownloadContent;
@@ -174,7 +188,7 @@ public class FileSystemDownloadRunner(
     private async Task<RequestDecision> HandleRequestAsync(string requestUrl)
     {
         var httpDancerSeSettingsMonitorValue = httpDancerSettingsOptionsMonitor.CurrentValue;
-        var requestShouldProceed = requestUrl.IsMatch(httpDancerSeSettingsMonitorValue.AllowedHosts);
+        var requestShouldProceed = requestUrl.IsMatch(httpDancerSeSettingsMonitorValue.DefaultClient.AllowedHosts);
         logger.LogDebug("Request decision for {Url}: {Decision}", requestUrl, requestShouldProceed ? "Proceed" : "Skip");
         return requestShouldProceed
             ? RequestDecision.Proceed
@@ -185,7 +199,7 @@ public class FileSystemDownloadRunner(
     {
         var remainingBudget = Math.Max(0, status.MaxRequests - status.ScheduledCount);
 
-        logger.LogDebug(
+        logger.LogInformation(
             "Status: Processed={Processed}/{MaxRequests}, Pending={Pending}, InFlight={InFlight}, Scheduled={Scheduled}, RemainingBudget={RemainingBudget}, EstimatedRemaining={Remaining}",
             status.ProcessedCount,
             status.MaxRequests,

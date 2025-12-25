@@ -14,12 +14,12 @@ public sealed class CorrelationIdHandler(
     {
         var settings = apiClientSettings.CurrentValue;
 
-        if (!settings.IncludeCorrelationIdHeader)
+        if (!settings.DefaultClient.IncludeCorrelationIdHeader)
         {
             return base.SendAsync(request, cancellationToken);
         }
 
-        var headerName = settings.CorrelationIdHeaderName;
+        var headerName = settings.DefaultClient.CorrelationIdHeaderName;
 
         // Do not override if caller already set it.
         if (request.Headers.Contains(headerName)) return base.SendAsync(request, cancellationToken);

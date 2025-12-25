@@ -139,11 +139,13 @@ public class ChanneledDownloadService : IDownloadService
     /// </summary>
     public async Task<bool> DownloadAsync(CancellationToken cancellationToken = default)
     {
-        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        using var cancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 
-        var token = cts.Token; // Capture the struct, not the CTS object else we get: Captured variable is disposed in the outer scope
+        // Capture the struct, not the CTS object else we get: Captured variable is disposed in the outer scope
+        var token = cancellationTokenSource.Token;
 
         var workers = StartWorkers(_channeledDownloadRequest.MaxConcurrentRequests, token);
+
         var callbackWorker = Task.Run(CallbackWorkerAsync);
 
         // Monitor loop: completes the writer when we're definitively done scheduling.
@@ -361,20 +363,22 @@ public class ChanneledDownloadService : IDownloadService
 
             var requestMessage = new RequestMessage
             {
+                Method = HttpMethod.Head,
                 Uri = targetUri,
                 ShouldReadBodyAsync = _channeledDownloadRequest.ShouldReadBodyAsync
             };
 
             var resource = await _httpClient.SendAsync(requestMessage, token).ConfigureAwait(false);
-
+            
             // Mark as processed on success.
             _processedUrls.TryAdd(url, 0);
 
             // Fire single response completion callback (best-effort).
             if (_channeledDownloadRequest.ResponseAsync is not null)
             {
-                var response = new DownloadResponse
+                    var response = new DownloadResponse
                 {
+                    Method = HttpMethod.Head.ToString(),
                     Url = url,
                     Value = resource
                 };

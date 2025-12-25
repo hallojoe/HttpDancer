@@ -1,8 +1,6 @@
-﻿using System.Text.Json;
-using HttpDancer.Core.Configuration;
-using HttpDancer.Core.Naming;
-using HttpDancer.FileSystemDownloader;
+﻿using HttpDancer.FileSystemDownloader;
 using HttpDancer.FileSystemDownloader.Configuration;
+using HttpDancer.Naming;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
@@ -28,21 +26,19 @@ public class Program
         using var scope = host.Services.CreateScope();
 
         // Get required services
-        var urlNamingOptions = scope.ServiceProvider.GetRequiredService<IOptions<UrlNamingOptions>>();
-        var urlNameProvider = scope.ServiceProvider.GetRequiredService<IUrlNamer>();
+        // var urlNamingOptions = scope.ServiceProvider.GetRequiredService<IOptions<UrlNamingOptions>>();
+        // var urlNameProvider = scope.ServiceProvider.GetRequiredService<IUrlNamer>();
+        // var fileSystemDownloaderSettings = scope.ServiceProvider.GetRequiredService<IOptions<FileSystemDownloaderSettings>>();
+        // var dataProvider = scope.ServiceProvider.GetRequiredService<IFileSystemDataProvider>();
+
         var fileSystemDownloadRunner = scope.ServiceProvider.GetRequiredService<IFileSystemDownloadRunner>();
+
         var urlProvider = scope.ServiceProvider.GetRequiredService<IUrlProvider>();
-
-        var fileSystemDownloaderSettings = scope.ServiceProvider.GetRequiredService<IOptions<FileSystemDownloaderSettings>>();
-        var dataProvider = scope.ServiceProvider.GetRequiredService<IFileSystemDataProvider>();
         
-
         var urls = await urlProvider.GetUrlsAsync();
 
-     //   var urlNames = urls.Select(x => urlNameProvider.GetNameAndPath(x)).ToList();
-        
-        
-        
+        // var urlNames = urls.Select(x => urlNameProvider.GetNameAndPath(x)).ToList();
+     
         var _ = await fileSystemDownloadRunner.Run(urls, true);
 
         

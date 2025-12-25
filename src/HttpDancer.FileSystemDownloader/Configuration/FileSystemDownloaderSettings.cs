@@ -4,6 +4,7 @@ public class FileSystemDownloaderSettings
 {
     public const string Key = "HttpDancer.FileSystemDownloader";
     public bool Enabled { get; set; }
+    public string BaseUrl { get; set; } = string.Empty;
     public string[] Urls { get; set; } = [];
     public string? Workspace { get; set; }
     /// <summary>

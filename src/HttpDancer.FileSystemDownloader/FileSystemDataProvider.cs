@@ -27,7 +27,19 @@ public class FileSystemDataProvider(IOptionsMonitor<FileSystemDownloaderSettings
         
         return await File.ReadAllTextAsync(pathAndFilename, Encoding.UTF8, cancellationToken);
     }
-    
+
+    public async Task<string[]> ReadStringCollectionAsync(string[] filenames, CancellationToken cancellationToken = default)
+    {
+        var result = new List<string>();
+        foreach (var filename in filenames)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var content = await ReadStringAsync(filename, cancellationToken);
+            result.Add(content);
+        }
+        return result.ToArray();
+    }
+
     public async Task WriteStringAsync(string relativePathWithFilename, string content, bool overwrite = true, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(relativePathWithFilename) || string.IsNullOrWhiteSpace(content))

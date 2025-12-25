@@ -102,7 +102,6 @@ public interface IHtmlQuery
         CancellationToken cancellationToken = default
     );
     
-    
     Task<IUtf8EncodedHtmlString> MakeLinksAbsoluteAsync(
         string utf8EncodeHtmlString,
         string baseUrl,
@@ -115,7 +114,6 @@ public interface IHtmlQuery
         string[]? preservedTagNames = null,
         CancellationToken cancellationToken = default
     );
-    
     
     Task<IUtf8EncodedHtmlString> MakeLinksAbsoluteAsync(
         IUtf8EncodedHtmlString utf8EncodeHtmlString,

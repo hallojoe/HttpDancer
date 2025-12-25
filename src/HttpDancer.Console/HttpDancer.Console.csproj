@@ -16,13 +16,28 @@
     <ItemGroup>
       <ProjectReference Include="..\HttpDancer.Core\HttpDancer.Core.csproj" />
       <ProjectReference Include="..\HttpDancer.FileSystemDownloader\HttpDancer.FileSystemDownloader.csproj" />
-      <ProjectReference Include="..\HttpDancer.Utilities\HttpDancer.Utilities.csproj" />
     </ItemGroup>
 
     <ItemGroup>
         <None Update="appsettings.json">
             <CopyToOutputDirectory>Always</CopyToOutputDirectory>
             <CopyToPublishDirectory>Always</CopyToPublishDirectory>
+        </None>
+        <None Update="appsettings.KnownMediaTypes.json">
+          <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+          <CopyToPublishDirectory>Always</CopyToPublishDirectory>
+        </None>
+        <None Update="appsettings.UrlNaming.json">
+          <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+          <CopyToPublishDirectory>Always</CopyToPublishDirectory>
+        </None>
+        <None Update="appsettings.HtmlQuerying.json">
+          <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+          <CopyToPublishDirectory>Always</CopyToPublishDirectory>
+        </None>
+        <None Update="appsettings.HtmlMinification.json">
+          <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+          <CopyToPublishDirectory>Always</CopyToPublishDirectory>
         </None>
     </ItemGroup>
 </Project>

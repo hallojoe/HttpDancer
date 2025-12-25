@@ -1,6 +1,5 @@
-using System.Text.RegularExpressions;
-using HttpDancer.Core.Parsing;
 using HttpDancer.Html;
+using HttpDancer.Parsing;
 using Microsoft.Extensions.Options;
 
 namespace HttpDancer.FileSystemDownloader.Data;
@@ -9,7 +8,7 @@ namespace HttpDancer.FileSystemDownloader.Data;
 /// <see cref="IHtmlStringsProvider"/> implementation that relies on <see cref="IHtmlQuery"/>
 /// to select elements and returns their value according to <see cref="HtmlValueStrategy"/>.
 /// </summary>
-public sealed partial class HtmlStringsParser(
+public sealed class HtmlStringsParser(
     HtmlParsingSettings htmlParsingSettings,
     IHtmlQuery htmlQuery,
     IDateTimeParser dateTimeParser)

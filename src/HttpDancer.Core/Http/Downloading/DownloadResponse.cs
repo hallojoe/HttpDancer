@@ -8,6 +8,11 @@ namespace HttpDancer.Core.Http.Downloading;
 public sealed class DownloadResponse
 {
     /// <summary>
+    /// Method used to download the URL
+    /// </summary>
+    public required string Method { get; init; }                  
+
+    /// <summary>
     /// The URL processed
     /// </summary>
     public required string Url { get; init; }                  

@@ -1,6 +1,7 @@
-using HttpDancer.Core.Parsing;
 using HttpDancer.FileSystemDownloader.Data;
-using HttpDancer.Utilities;
+using HttpDancer.KnownMediaTypes.Configuration;
+using HttpDancer.Naming.Configuration;
+using HttpDancer.Parsing.Configuration;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -10,16 +11,20 @@ public static class ServiceCollectionExtensions
 {
     public static IServiceCollection AddFileSystemDownloader(this IServiceCollection services, IConfiguration configuration)
     {
+
         services.Configure<HtmlParsingSettings>(configuration.GetSection(HtmlParsingSettings.Key));
         services.Configure<FileSystemDownloaderSettings>(configuration.GetSection(FileSystemDownloaderSettings.Key));
 
+        services.AddKnownMediaTypes();
+        services.AddParsing();
+        services.AddUrlNaming(configuration);
         
         services.AddOptions<MinificationSettings>().BindConfiguration(MinificationSettings.Key);
-        services.AddSingleton<IDateTimeParser, DateTimeParser>();
         services.AddSingleton<IHtmlStringsProvider, HtmlStringsParser>();
         services.AddSingleton<IFileSystemDownloadRunner, FileSystemDownloadRunner>();
         services.AddSingleton<IFileSystemDataProvider, FileSystemDataProvider>();
         services.AddSingleton<IUrlProvider, FileSystemUrlProvider>();
+
         return services;
     }
 }

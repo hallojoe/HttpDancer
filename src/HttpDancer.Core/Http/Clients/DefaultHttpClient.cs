@@ -84,8 +84,8 @@ public class DefaultHttpClient(
             method,
             uri,
             correlationId,
-            settings.ReadBodyOnSuccess,
-            settings.ReadBodyOnNonSuccess);
+            settings.DefaultClient.ReadBodyOnSuccess,
+            settings.DefaultClient.ReadBodyOnNonSuccess);
 
         using var httpRequest = new HttpRequestMessage(method, uri);
 
@@ -271,6 +271,8 @@ public class DefaultHttpClient(
             // Return a synthetic response so callers can continue gracefully on DNS/connection failures.
             return new ResponseMessage
             {
+                
+                Method = requestMessage.Method.Method,
                 Uri = uri,
                 StatusCode = System.Net.HttpStatusCode.ServiceUnavailable,
                 Message = $"Request failed: {httpException.Message}",
@@ -292,6 +294,7 @@ public class DefaultHttpClient(
             
             return new ResponseMessage
             {
+                Method = requestMessage.Method.Method,
                 Uri = uri,
                 StatusCode = System.Net.HttpStatusCode.InternalServerError,
                 Message = $"Unexpected send error: {exception.Message}",
@@ -304,8 +307,8 @@ public class DefaultHttpClient(
         {
             var isHead = method == HttpMethod.Head;
 
-            var readBodyOnSuccess = !isHead && (requestMessage.ReadBodyOnSuccess ?? settings.ReadBodyOnSuccess ?? true);
-            var readBodyOnNonSuccess = !isHead && (requestMessage.ReadBodyOnNonSuccess ?? settings.ReadBodyOnNonSuccess ?? false);
+            var readBodyOnSuccess = !isHead && (requestMessage.ReadBodyOnSuccess ?? settings.DefaultClient.ReadBodyOnSuccess ?? true);
+            var readBodyOnNonSuccess = !isHead && (requestMessage.ReadBodyOnNonSuccess ?? settings.DefaultClient.ReadBodyOnNonSuccess ?? false);
 
             logger.LogDebug(
                 "Mapping HTTP response for {Method} {Uri}. StatusCode={StatusCode}, IsSuccess={IsSuccess}, ReadBodyOnSuccess={ReadBodyOnSuccess}, ReadBodyOnNonSuccess={ReadBodyOnNonSuccess}, CorrelationId={CorrelationId}",
@@ -370,6 +373,7 @@ public class DefaultHttpClient(
         var statusCode = response.StatusCode;
         var headers = GetHeaders(response);
         var isSuccess = response.IsSuccessStatusCode;
+        
         var message = isSuccess
             ? null
             : $"Endpoint responded with status {statusCode} {response.ReasonPhrase} when requesting resource {effectiveUri}";
@@ -387,19 +391,21 @@ public class DefaultHttpClient(
         if (effectiveUri != originalUri)
         {
             logger.LogDebug(
-            "Effective URI differs from original. Original={OriginalUri}, Effective={EffectiveUri}, CorrelationId={CorrelationId}",
-            originalUri,
-            effectiveUri,
-            correlationId);
+                "Effective URI differs from original. Original={OriginalUri}, Effective={EffectiveUri}, CorrelationId={CorrelationId}",
+                originalUri,
+                effectiveUri,
+                correlationId);
         }
 
         var responseMessage = new ResponseMessage
         {
+            Method = response.RequestMessage?.Method.Method,
             ContentType = contentType,
             StatusCode = statusCode,
             Uri = effectiveUri,
             Headers = headers,
             Message = message,
+            BodyLength = response.Content.Headers.ContentLength ?? 0,
             CorrelationId = correlationId
         };
 

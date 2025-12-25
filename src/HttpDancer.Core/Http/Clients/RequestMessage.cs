@@ -13,7 +13,7 @@ public sealed class RequestMessage
     public HttpMethod Method { get; init; } = HttpMethod.Get;
 
     /// <summary>
-    /// Optional HTTP content (body) for methods like POST/PUT/PATCH.
+    /// Optional HTTP content (body) for methods like POST/PUT/PATCH. 
     /// </summary>
     public HttpContent? Content { get; init; }
 

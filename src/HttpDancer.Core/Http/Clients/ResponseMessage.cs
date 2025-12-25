@@ -17,6 +17,11 @@ public sealed class ResponseMessage
     public string?  Url => Uri?.ToString();
 
     /// <summary>
+    /// HTTP method used to fetch the resource.
+    /// </summary>
+    public string? Method { get; init; }
+
+    /// <summary>
     /// HTTP status code returned by the server.
     /// </summary>
     public HttpStatusCode StatusCode { get; init; }
@@ -44,9 +49,9 @@ public sealed class ResponseMessage
     public byte[]? BodyBytes { get; set; }
 
     /// <summary>
-    /// Convenience body length.
+    /// Claimed body length.
     /// </summary>
-    public long? BodyLength => BodyBytes?.Length ?? 0;
+    public long? BodyLength { get; set; }
 
     /// <summary>
     /// Optional textual message (e.g. error details, validation message).
