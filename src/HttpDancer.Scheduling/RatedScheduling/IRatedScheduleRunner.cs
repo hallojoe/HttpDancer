@@ -41,6 +41,7 @@ public interface IRatedScheduleRunner
     /// <param name="startTimestamp">
     /// Optional monotonic start timestamp used as the reference point for all offsets.
     /// If not supplied, the current monotonic timestamp is captured at the start of execution.
+    /// IMPORTANT: This value must be a stopwatch timestamp captured via <see cref="System.Diagnostics.Stopwatch.GetTimestamp"/>.
     /// </param>
     /// <param name="maxDegreeOfParallelism">
     /// The maximum number of callbacks that may run concurrently when multiple offsets are eligible at the same time
@@ -86,6 +87,7 @@ public interface IRatedScheduleRunner
     /// <param name="startTimestamp">
     /// Optional monotonic start timestamp used as the reference point for all offsets.
     /// If not supplied, the current monotonic timestamp is captured at the start of execution.
+    /// IMPORTANT: This value must be a stopwatch timestamp captured via <see cref="System.Diagnostics.Stopwatch.GetTimestamp"/>.
     /// </param>
     /// <param name="cancellationToken">
     /// A token used to cancel waiting and execution. Implementations should observe this token while delaying and
@@ -119,11 +121,12 @@ public interface IRatedScheduleRunner
     /// and a cancellation token.
     /// </param>
     /// <param name="settings">
-    /// Runner settings controlling execution behavior such as concurrency limits and queue capacity.
+    /// Runner settings controlling execution behavior such as concurrency limits, queue capacity, and batching tolerance.
     /// </param>
     /// <param name="startTimestamp">
     /// Optional monotonic start timestamp used as the reference point for all offsets.
     /// If not supplied, the current monotonic timestamp is captured at the start of execution.
+    /// IMPORTANT: This value must be a stopwatch timestamp captured via <see cref="System.Diagnostics.Stopwatch.GetTimestamp"/>.
     /// </param>
     /// <param name="cancellationToken">
     /// A token used to cancel waiting and execution. Implementations should observe this token while delaying and
@@ -134,6 +137,46 @@ public interface IRatedScheduleRunner
     /// </returns>
     Task<long> RunAsync(
         IEnumerable<TimeSpan> schedule,
+        Func<int, TimeSpan, CancellationToken, Task> executeAsync,
+        RatedScheduleRunnerSettings settings,
+        long? startTimestamp = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Executes <paramref name="executeAsync"/> once for each offset in <paramref name="sortedSchedule"/>,
+    /// relative to a monotonic start timestamp, using a streaming strategy that avoids materializing
+    /// and sorting the full schedule.
+    ///
+    /// This method is optimized for large schedules that are already sorted (non-decreasing offsets).
+    /// Enumeration order determines the callback index. Negative offsets are skipped but still consume an index.
+    /// If execution falls behind schedule, overdue offsets are executed without additional delay.
+    /// </summary>
+    /// <param name="sortedSchedule">
+    /// A sequence of offsets that must be in non-decreasing order (already sorted).
+    /// Each element represents an elapsed duration from the start time at which the corresponding callback becomes eligible.
+    /// </param>
+    /// <param name="executeAsync">
+    /// The callback to execute for each enumerated offset. The callback receives the enumeration index, the offset,
+    /// and a cancellation token.
+    /// </param>
+    /// <param name="settings">
+    /// Runner settings controlling execution behavior such as concurrency limits, queue capacity, and batching tolerance.
+    /// If you want implementation defaults, pass the same settings instance used by the implementation (or call a different overload if provided).
+    /// </param>
+    /// <param name="startTimestamp">
+    /// Optional monotonic start timestamp used as the reference point for all offsets.
+    /// If not supplied, the current monotonic timestamp is captured at the start of execution.
+    /// IMPORTANT: This value must be a stopwatch timestamp captured via <see cref="System.Diagnostics.Stopwatch.GetTimestamp"/>.
+    /// </param>
+    /// <param name="cancellationToken">
+    /// A token used to cancel waiting and execution. Implementations should observe this token while delaying and
+    /// should pass it through to <paramref name="executeAsync"/>.
+    /// </param>
+    /// <returns>
+    /// The effective monotonic start timestamp used for interpreting offsets.
+    /// </returns>
+    Task<long> RunSortedAsync(
+        IEnumerable<TimeSpan> sortedSchedule,
         Func<int, TimeSpan, CancellationToken, Task> executeAsync,
         RatedScheduleRunnerSettings settings,
         long? startTimestamp = null,

@@ -39,7 +39,7 @@ public sealed class RequestMessage
     /// Optional callback to decide whether to read the body after inspecting the response metadata
     /// (headers, status, etc). Return true to force read, false to skip, null to use defaults.
     /// </summary>
-    public Func<ResponseMessage, Task<bool?>>? ShouldReadBodyAsync { get; init; }
+    public Func<HttpResponseMessage, Task<bool?>>? ShouldReadBodyAsync { get; init; }
 
     /// <summary>
     /// Optional per-request timeout. If set, the request will be canceled after this duration,

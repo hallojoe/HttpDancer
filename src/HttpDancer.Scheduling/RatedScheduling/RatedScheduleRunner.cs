@@ -5,51 +5,58 @@ namespace HttpDancer.Scheduling.RatedScheduling;
 
 /// <summary>
 /// An enhanced runner for large schedules that:
-/// - Uses <see cref="Stopwatch"/> for monotonic timing (avoids TickCount wrap)
+/// - Uses <see cref="Stopwatch"/> for monotonic timing
 /// - Batches offsets that fall within a tolerance window so "equal-ish" entries run together
 /// - Validates inputs (rejects negative offsets, invalid capacities) and avoids precision loss
+///
+/// Time units:
+/// - Schedule offsets are expressed as <see cref="TimeSpan"/> (i.e. 100 ns ticks).
+/// - The optional start timestamp must be a stopwatch timestamp from <see cref="Stopwatch.GetTimestamp"/>.
 /// </summary>
 public sealed class RatedScheduleRunner(RatedScheduleRunnerSettings? ratedScheduleRunnerSettings = null)
     : IRatedScheduleRunner
 {
-    private readonly RatedScheduleRunnerSettings _ratedScheduleRunnerSettings = 
-        ratedScheduleRunnerSettings ?? new();
+    private static readonly IComparer<ScheduledItem> ScheduledItemComparer = new ScheduledItemBucketThenIndexComparer();
+
+    private readonly RatedScheduleRunnerSettings _defaults = ratedScheduleRunnerSettings ?? new();
 
     /// <inheritdoc />
-    public async Task<long> RunAsync(
+    public Task<long> RunAsync(
         IEnumerable<TimeSpan> schedule,
         Func<int, TimeSpan, CancellationToken, Task> executeAsync,
         RatedScheduleRunnerSettings settings,
         long? startTimestamp = null,
         CancellationToken cancellationToken = default)
     {
-        return await RunAsync(
-            schedule, 
-            executeAsync, 
-            startTimestamp, 
-            settings.MaxDegreeOfParallelism, 
-            settings.BoundedCapacity, 
+        // Treat the provided settings as per-run overrides for ALL runner behavior (including batching).
+        return RunInternalAsync(
+            schedule,
+            executeAsync,
+            startStopwatchTimestamp: startTimestamp,
+            effectiveSettings: settings,
+            assumeSortedSchedule: false,
             cancellationToken);
     }
 
     /// <inheritdoc />
-    public async Task<long> RunAsync(
+    public Task<long> RunAsync(
         IEnumerable<TimeSpan> schedule,
         Func<int, TimeSpan, CancellationToken, Task> executeAsync,
         long? startTimestamp = null,
         CancellationToken cancellationToken = default)
     {
-        return await RunAsync(
-            schedule, 
-            executeAsync, 
-            startTimestamp, 
-            _ratedScheduleRunnerSettings.MaxDegreeOfParallelism, 
-            _ratedScheduleRunnerSettings.BoundedCapacity, 
+        // Use defaults for ALL runner behavior.
+        return RunInternalAsync(
+            schedule,
+            executeAsync,
+            startStopwatchTimestamp: startTimestamp,
+            effectiveSettings: _defaults,
+            assumeSortedSchedule: false,
             cancellationToken);
     }
 
     /// <inheritdoc />
-    public async Task<long> RunAsync(
+    public Task<long> RunAsync(
         IEnumerable<TimeSpan> schedule,
         Func<int, TimeSpan, CancellationToken, Task> executeAsync,
         long? startTimestamp = null,
@@ -57,147 +64,321 @@ public sealed class RatedScheduleRunner(RatedScheduleRunnerSettings? ratedSchedu
         int? boundedCapacity = null,
         CancellationToken cancellationToken = default)
     {
+        // Keep this overload for compatibility, but apply overrides consistently.
+        var effective = Merge(_defaults, maxDegreeOfParallelism, boundedCapacity);
+
+        return RunInternalAsync(
+            schedule,
+            executeAsync,
+            startStopwatchTimestamp: startTimestamp,
+            effectiveSettings: effective,
+            assumeSortedSchedule: false,
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// Optimized path for schedules that are already sorted (non-decreasing offsets).
+    /// This avoids materializing and sorting the full schedule, reducing memory footprint.
+    /// </summary>
+    public Task<long> RunSortedAsync(
+        IEnumerable<TimeSpan> sortedSchedule,
+        Func<int, TimeSpan, CancellationToken, Task> executeAsync,
+        RatedScheduleRunnerSettings? settingsOverride = null,
+        long? startStopwatchTimestamp = null,
+        CancellationToken cancellationToken = default)
+    {
+        var effective = settingsOverride ?? _defaults;
+
+        return RunInternalAsync(
+            sortedSchedule,
+            executeAsync,
+            startStopwatchTimestamp,
+            effective,
+            assumeSortedSchedule: true,
+            cancellationToken);
+    }
+
+    private async Task<long> RunInternalAsync(
+        IEnumerable<TimeSpan> schedule,
+        Func<int, TimeSpan, CancellationToken, Task> executeAsync,
+        long? startStopwatchTimestamp,
+        RatedScheduleRunnerSettings effectiveSettings,
+        bool assumeSortedSchedule,
+        CancellationToken cancellationToken)
+    {
         ArgumentNullException.ThrowIfNull(schedule);
         ArgumentNullException.ThrowIfNull(executeAsync);
-        
-        if (maxDegreeOfParallelism <= 0)
+
+        ValidateEffectiveSettings(effectiveSettings);
+
+        // Stopwatch timestamp only.
+        var effectiveStartStopwatchTimestamp = startStopwatchTimestamp ?? Stopwatch.GetTimestamp();
+        ValidateStartStopwatchTimestamp(effectiveStartStopwatchTimestamp);
+
+        var executionOptions = new ExecutionDataflowBlockOptions
         {
-            throw new ArgumentOutOfRangeException(nameof(maxDegreeOfParallelism));
+            CancellationToken = cancellationToken,
+            MaxDegreeOfParallelism = effectiveSettings.MaxDegreeOfParallelism,
+            EnsureOrdered = false
+        };
+
+        if (effectiveSettings.BoundedCapacity is { } cap)
+        {
+            executionOptions.BoundedCapacity = cap;
         }
 
-        if (boundedCapacity <= 0)
+        var executionBlock = new ActionBlock<ScheduledItem>(
+            async item =>
+            {
+                var offset = TimeSpan.FromTicks(item.OffsetTimeSpanTicks);
+                await executeAsync(item.Index, offset, cancellationToken).ConfigureAwait(false);
+            },
+            executionOptions);
+
+        try
         {
-            throw new ArgumentOutOfRangeException(nameof(boundedCapacity));
+            if (assumeSortedSchedule)
+            {
+                await RunSortedStreamingAsync(
+                        schedule,
+                        executionBlock,
+                        effectiveStartStopwatchTimestamp,
+                        effectiveSettings,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            else
+            {
+                await RunUnsortedMaterializeAndSortAsync(
+                        schedule,
+                        executionBlock,
+                        effectiveStartStopwatchTimestamp,
+                        effectiveSettings,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            // Always complete the block so awaiting Completion won't hang.
+            executionBlock.Complete();
         }
 
-        // Use Stopwatch ticks for monotonic time; caller-provided startTimestamp is assumed to be in the same units.
-        var effectiveStartTimestamp = startTimestamp ?? Stopwatch.GetTimestamp();
+        await executionBlock.Completion.ConfigureAwait(false);
+        return effectiveStartStopwatchTimestamp;
+    }
 
-        // Materialize schedule: keep both original offset (for callback) and bucketed offset (for grouping).
-        var scheduledItems = new List<ScheduledItem>();
-        var toleranceTicks = _ratedScheduleRunnerSettings.BatchTolerance.Ticks;
+    private static async Task RunSortedStreamingAsync(
+        IEnumerable<TimeSpan> sortedSchedule,
+        ITargetBlock<ScheduledItem> executionBlock,
+        long startStopwatchTimestamp,
+        RatedScheduleRunnerSettings settings,
+        CancellationToken cancellationToken)
+    {
+        var toleranceTimeSpanTicks = settings.BatchTolerance.Ticks;
+
+        var index = 0;
+        long? currentBatchBucketTicks = null;
+
+        foreach (var offset in sortedSchedule)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var offsetTimeSpanTicks = offset.Ticks;
+
+            if (offsetTimeSpanTicks < 0)
+            {
+                if (!settings.SkipNegativeOffsets)
+                {
+                    throw new ArgumentOutOfRangeException(nameof(sortedSchedule),
+                        $"Offset at index {index} is negative: {offset}");
+                }
+
+                index = checked(index + 1);
+                continue;
+            }
+
+            // Assumes offsets are non-decreasing.
+            var bucketTimeSpanTicks = toleranceTimeSpanTicks == 0
+                ? offsetTimeSpanTicks
+                : BucketCeiling(offsetTimeSpanTicks, toleranceTimeSpanTicks); // never runs early
+
+            if (currentBatchBucketTicks is null || bucketTimeSpanTicks != currentBatchBucketTicks.Value)
+            {
+                currentBatchBucketTicks = bucketTimeSpanTicks;
+                await DelayUntilAsync(
+                        startStopwatchTimestamp,
+                        TimeSpan.FromTicks(bucketTimeSpanTicks),
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            // SendAsync can await when bounded capacity is reached (backpressure).
+            await executionBlock.SendAsync(
+                    new ScheduledItem(index, offsetTimeSpanTicks, bucketTimeSpanTicks),
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            index = checked(index + 1);
+        }
+    }
+
+    private static async Task RunUnsortedMaterializeAndSortAsync(
+        IEnumerable<TimeSpan> schedule,
+        ITargetBlock<ScheduledItem> executionBlock,
+        long startStopwatchTimestamp,
+        RatedScheduleRunnerSettings settings,
+        CancellationToken cancellationToken)
+    {
+        var toleranceTimeSpanTicks = settings.BatchTolerance.Ticks;
+
+        // Pre-size list if we can (reduces allocations).
+        var scheduledItems = schedule is ICollection<TimeSpan> c
+            ? new List<ScheduledItem>(c.Count)
+            : new List<ScheduledItem>();
 
         var index = 0;
         foreach (var offset in schedule)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var offsetTicks = offset.Ticks;
-            if (offsetTicks < 0)
+            var offsetTimeSpanTicks = offset.Ticks;
+            if (offsetTimeSpanTicks < 0)
             {
-                if (!_ratedScheduleRunnerSettings.SkipNegativeOffsets)
+                if (!settings.SkipNegativeOffsets)
                 {
                     throw new ArgumentOutOfRangeException(nameof(schedule),
                         $"Offset at index {index} is negative: {offset}");
                 }
 
                 index = checked(index + 1);
-
                 continue;
             }
 
-            var bucketTicks = toleranceTicks == 0
-                ? offsetTicks
-                : RoundToNearest(offsetTicks, toleranceTicks);
+            var bucketTimeSpanTicks = toleranceTimeSpanTicks == 0
+                ? offsetTimeSpanTicks
+                : BucketCeiling(offsetTimeSpanTicks, toleranceTimeSpanTicks); // never runs early
 
-            scheduledItems.Add(new ScheduledItem(index, offsetTicks, bucketTicks));
-
+            scheduledItems.Add(new ScheduledItem(index, offsetTimeSpanTicks, bucketTimeSpanTicks));
             index = checked(index + 1);
         }
 
         // Sort by bucketed time, then original index for deterministic ordering.
-        scheduledItems.Sort((left, right) =>
-        {
-            var comparison = left.BucketTicks.CompareTo(right.BucketTicks);
-            return comparison != 0
-                ? comparison
-                : left.Index.CompareTo(right.Index);
-        });
+        scheduledItems.Sort(ScheduledItemComparer);
 
-        var executionOptions = new ExecutionDataflowBlockOptions
-        {
-            CancellationToken = cancellationToken,
-            MaxDegreeOfParallelism = maxDegreeOfParallelism,
-            EnsureOrdered = false
-        };
-
-        if (boundedCapacity is { } capacityValue)
-        {
-            executionOptions.BoundedCapacity = capacityValue;
-        }
-
-        // Use a single block for all scheduled items to avoid excessive concurrency and memory overhead.
-        var executionBlock = new ActionBlock<ScheduledItem>(
-            async item =>
-            {
-                var offset = TimeSpan.FromTicks(item.OffsetTicks);
-                await executeAsync(item.Index, offset, cancellationToken).ConfigureAwait(false);
-            },
-            executionOptions);
-
-        // Send items to the execution block in batches, grouped by bucketed time.
         var position = 0;
         while (position < scheduledItems.Count)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var batchBucketTicks = scheduledItems[position].BucketTicks;
+            var batchBucketTimeSpanTicks = scheduledItems[position].BucketTimeSpanTicks;
 
-            await DelayUntilAsync(effectiveStartTimestamp, batchBucketTicks, cancellationToken).ConfigureAwait(false);
+            await DelayUntilAsync(
+                    startStopwatchTimestamp,
+                    TimeSpan.FromTicks(batchBucketTimeSpanTicks),
+                    cancellationToken)
+                .ConfigureAwait(false);
 
-            // Send all items in the current batch to the execution block.
             while (position < scheduledItems.Count &&
-                   scheduledItems[position].BucketTicks == batchBucketTicks)
+                   scheduledItems[position].BucketTimeSpanTicks == batchBucketTimeSpanTicks)
             {
-                // Asynchronously offers a message to the target message block, allowing for postponement.
-                // SendAsync is non-blocking and will return immediately if the block is full.
-                await executionBlock.SendAsync(scheduledItems[position], cancellationToken).ConfigureAwait(false);
-                
+                await executionBlock.SendAsync(scheduledItems[position], cancellationToken)
+                    .ConfigureAwait(false);
+
                 position++;
             }
         }
-
-        // Signal completion to allow any remaining work to complete.
-        executionBlock.Complete();
-        
-        // Wait for all work to complete before returning the effective start timestamp.
-        await executionBlock.Completion.ConfigureAwait(false);
-
-        return effectiveStartTimestamp;
     }
 
-    private static long RoundToNearest(long valueTicks, long toleranceTicks)
+    private static RatedScheduleRunnerSettings Merge(
+        RatedScheduleRunnerSettings defaults,
+        int maxDegreeOfParallelism,
+        int? boundedCapacity)
     {
-        // Round to the nearest multiple of toleranceTicks, favoring larger buckets on ties for determinism.
-        var half = toleranceTicks / 2;
-        var adjusted = checked(valueTicks + half);
-        return checked(adjusted / toleranceTicks * toleranceTicks);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxDegreeOfParallelism);
+
+        if (boundedCapacity is <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(boundedCapacity));
+        }
+
+        // Minimal approach: clone defaults and override the two fields.
+        // If your settings type is immutable, replace with a "with" expression or factory.
+        return new RatedScheduleRunnerSettings
+        {
+            BatchTolerance = defaults.BatchTolerance,
+            SkipNegativeOffsets = defaults.SkipNegativeOffsets,
+            MaxDegreeOfParallelism = maxDegreeOfParallelism,
+            BoundedCapacity = boundedCapacity
+        };
+    }
+
+    private static void ValidateEffectiveSettings(RatedScheduleRunnerSettings settings)
+    {
+        if (settings.MaxDegreeOfParallelism <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(settings.MaxDegreeOfParallelism));
+        }
+
+        if (settings.BoundedCapacity is <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(settings.BoundedCapacity));
+        }
+
+        if (settings.BatchTolerance < TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(settings.BatchTolerance));
+        }
+    }
+
+    private static void ValidateStartStopwatchTimestamp(long startStopwatchTimestamp)
+    {
+        // Best-effort heuristic to catch obvious mistakes (e.g. DateTime.UtcNow.Ticks).
+        // We allow large skew to avoid breaking long-running processes.
+        var now = Stopwatch.GetTimestamp();
+        var maxSkew = Stopwatch.Frequency * 60L * 60L * 24L * 365L * 5L; // 5 years of ticks
+
+        var diff = startStopwatchTimestamp - now;
+        if (diff > maxSkew || diff < -maxSkew)
+        {
+            throw new ArgumentOutOfRangeException(nameof(startStopwatchTimestamp),
+                "startTimestamp must be a stopwatch timestamp from Stopwatch.GetTimestamp(). " +
+                "It looks far outside the expected range relative to the current stopwatch timestamp.");
+        }
     }
 
     /// <summary>
-    /// Delays the execution until the specified offset time from the start timestamp
-    /// has elapsed, allowing for efficient coarse waiting for long delays and finer waiting as the target time approaches.
+    /// Buckets to a tolerance window in a "never run early" way by rounding UP to the end of the window.
+    /// This means items may be delayed up to the tolerance but won't execute before their requested offset.
     /// </summary>
-    /// <param name="startTimestamp">The starting timestamp, typically as a monotonic time reference in ticks.</param>
-    /// <param name="offsetTicks">The offset in ticks from the starting timestamp at which the delay should complete.</param>
-    /// <param name="cancellationToken">A token to monitor for cancellation requests during the delay operation.</param>
-    /// <returns>A task that represents the asynchronous delay operation.</returns>
-    private static async Task DelayUntilAsync(long startTimestamp, long offsetTicks,
+    private static long BucketCeiling(long valueTimeSpanTicks, long toleranceTimeSpanTicks)
+    {
+        // tolerance must be > 0 when called
+        var adjusted = checked(valueTimeSpanTicks + toleranceTimeSpanTicks - 1);
+        return checked(adjusted / toleranceTimeSpanTicks * toleranceTimeSpanTicks);
+    }
+
+    /// <summary>
+    /// Delays until the specified offset from the start stopwatch timestamp has elapsed.
+    /// Uses coarse waiting for long delays and finer waiting as the target time approaches.
+    /// </summary>
+    private static async Task DelayUntilAsync(
+        long startStopwatchTimestamp,
+        TimeSpan offset,
         CancellationToken cancellationToken)
     {
         while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var elapsed = Stopwatch.GetElapsedTime(startTimestamp);
-            var remaining = TimeSpan.FromTicks(checked(offsetTicks - elapsed.Ticks));
+            var elapsed = Stopwatch.GetElapsedTime(startStopwatchTimestamp);
+            var remaining = offset - elapsed;
 
             if (remaining <= TimeSpan.Zero)
             {
                 return;
             }
 
-            // Coarse waits for long delays and tighten as the deadline approaches to avoid busy waiting.
             var sleep =
                 remaining > TimeSpan.FromHours(1) ? TimeSpan.FromMinutes(15) :
                 remaining > TimeSpan.FromMinutes(5) ? TimeSpan.FromMinutes(1) :
@@ -209,17 +390,15 @@ public sealed class RatedScheduleRunner(RatedScheduleRunnerSettings? ratedSchedu
 
     /// <summary>
     /// Represents an item in a scheduled execution plan.
-    /// Contains details about the item's position in the schedule,
-    /// its specific time offset, and a bucketed offset for grouping similar execution times.
     /// </summary>
-    /// <param name="Index">
-    /// The zero-based index of the item in the schedule, used to maintain original order in case of ties.
-    /// </param>
-    /// <param name="OffsetTicks">
-    /// The precise time offset, in ticks, from the start of the schedule to when this item is intended to execute.
-    /// </param>
-    /// <param name="BucketTicks">
-    /// The rounded or grouped time offset, in ticks, based on a tolerance for consolidating executions that occur within a similar time frame.
-    /// </param>
-    private readonly record struct ScheduledItem(int Index, long OffsetTicks, long BucketTicks);
+    private readonly record struct ScheduledItem(int Index, long OffsetTimeSpanTicks, long BucketTimeSpanTicks);
+
+    private sealed class ScheduledItemBucketThenIndexComparer : IComparer<ScheduledItem>
+    {
+        public int Compare(ScheduledItem x, ScheduledItem y)
+        {
+            var c = x.BucketTimeSpanTicks.CompareTo(y.BucketTimeSpanTicks);
+            return c != 0 ? c : x.Index.CompareTo(y.Index);
+        }
+    }
 }

@@ -43,6 +43,6 @@ public class ChanneledDownloadRequest
     /// Receives response metadata without the body bytes. Return true to force reading, false to force skipping,
     /// null to fall back to the configured defaults. Applies to both success and non-success responses.
     /// </summary>
-    public Func<ResponseMessage, Task<bool?>>? ShouldReadBodyAsync { get; set; }
+    public Func<CompletedHttpResponseMessage, Task<bool?>>? ShouldReadBodyAsync { get; set; }
 
 }

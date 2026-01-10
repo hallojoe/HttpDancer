@@ -1,3 +1,4 @@
+using HttpDancer.Core.Http;
 using HttpDancer.Core.Http.Clients;
 using HttpDancer.Core.Http.Observability;
 using Microsoft.Extensions.Configuration;
@@ -23,6 +24,7 @@ public static class ServiceCollectionExtensions
         
         services.AddSingleton<ICorrelationIdProvider, CorrelationIdProvider>();
         services.AddTransient<CorrelationIdHandler>();
+        services.AddTransient<IHttpResponseMessageProcessor, HttpResponseMessageProcessor>();
 
         // Add throttling options and handler
 

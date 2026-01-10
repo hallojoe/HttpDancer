@@ -178,12 +178,12 @@ public class FileSystemDownloadRunner(
         logger.LogDebug("Saved data JSON for {Url}.", downloadResponse.Value.Url);
     }
 
-    private async Task<bool?> HandleShouldReadBodyAsync(ResponseMessage responseMessage)
+    private async Task<bool?> HandleShouldReadBodyAsync(CompletedHttpResponseMessage completedHttpResponseMessage)
     {
         var httpDancerSeSettingsMonitorValue = httpDancerSettingsOptionsMonitor.CurrentValue;
-        var contentTypeShouldDownloadContent = responseMessage.ContentType?.IsMatch(httpDancerSeSettingsMonitorValue.DefaultClient.AllowedContentTypes) is true;
+        var contentTypeShouldDownloadContent = completedHttpResponseMessage.ContentType?.IsMatch(httpDancerSeSettingsMonitorValue.DefaultClient.AllowedContentTypes) is true;
 
-        logger.LogDebug("ShouldReadBody? Url={Url}, ContentType={ContentType}, Decision={Decision}", responseMessage.Url, responseMessage.ContentType, contentTypeShouldDownloadContent);
+        logger.LogDebug("ShouldReadBody? Url={Url}, ContentType={ContentType}, Decision={Decision}", completedHttpResponseMessage.Url, completedHttpResponseMessage.ContentType, contentTypeShouldDownloadContent);
         return contentTypeShouldDownloadContent;
     }
 

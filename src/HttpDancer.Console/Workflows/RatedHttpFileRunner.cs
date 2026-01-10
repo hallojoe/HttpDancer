@@ -11,7 +11,7 @@ public record RatedScheduleResponseMessage(
     int Index, 
     DateTime PlannedDateTime, 
     DateTime? ExecutionDateTime, 
-    ResponseMessage? ResponseMessage);
+    CompletedHttpResponseMessage? ResponseMessage);
 
 public sealed class RatedHttpFileRunner(
     IHttpClient httpClient, 

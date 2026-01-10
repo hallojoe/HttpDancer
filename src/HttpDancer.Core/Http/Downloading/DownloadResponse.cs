@@ -20,5 +20,5 @@ public sealed class DownloadResponse
     /// <summary>
     /// Underlying client response
     /// </summary>
-    public required ResponseMessage Value { get; set; }   
+    public required CompletedHttpResponseMessage Value { get; set; }   
 }
