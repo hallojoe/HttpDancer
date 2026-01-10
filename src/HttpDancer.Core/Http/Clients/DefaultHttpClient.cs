@@ -271,7 +271,7 @@ public class DefaultHttpClient(
             // Return a synthetic response so callers can continue gracefully on DNS/connection failures.
             return new ResponseMessage
             {
-                
+                Request = requestMessage,
                 Method = requestMessage.Method.Method,
                 Uri = uri,
                 StatusCode = System.Net.HttpStatusCode.ServiceUnavailable,
@@ -294,6 +294,7 @@ public class DefaultHttpClient(
             
             return new ResponseMessage
             {
+                Request = requestMessage,
                 Method = requestMessage.Method.Method,
                 Uri = uri,
                 StatusCode = System.Net.HttpStatusCode.InternalServerError,
@@ -321,6 +322,7 @@ public class DefaultHttpClient(
                 correlationId);
 
             return await BuildResourceResponseAsync(
+                    requestMessage,
                     response,
                     uri,
                     readBodyOnSuccess,
@@ -360,6 +362,7 @@ public class DefaultHttpClient(
     #region Value Mapping
 
     private async Task<ResponseMessage> BuildResourceResponseAsync(
+        RequestMessage requestMessage,
         HttpResponseMessage response,
         Uri originalUri,
         bool readBodyOnSuccess,
@@ -399,13 +402,14 @@ public class DefaultHttpClient(
 
         var responseMessage = new ResponseMessage
         {
+            Request = requestMessage,
             Method = response.RequestMessage?.Method.Method,
             ContentType = contentType,
             StatusCode = statusCode,
             Uri = effectiveUri,
             Headers = headers,
             Message = message,
-            BodyLength = response.Content.Headers.ContentLength ?? 0,
+            BodyLength = response.Content.Headers.ContentLength ?? -1,
             CorrelationId = correlationId
         };
 

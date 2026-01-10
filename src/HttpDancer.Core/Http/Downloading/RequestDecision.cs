@@ -14,7 +14,7 @@ public enum RequestDecision
     /// </summary>
     SkipOnce,         
     /// <summary>
-    /// Skip and mark as processed so it won't be retried.
+    /// Skip and mark as processed. No retries.
     /// </summary>
     SkipPermanently   
 }

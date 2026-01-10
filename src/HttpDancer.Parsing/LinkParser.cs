@@ -1,11 +1,12 @@
 using System.Net;
 using System.Text.RegularExpressions;
+using HttpDancer.Extensions;
 
 namespace HttpDancer.Parsing;
 
 public interface ILinkParser
 {
-    Link[] GetLinks(string utf8EncodedString, string sourceUrl);
+    Link[] GetLinks(string utf8EncodedString, string sourceUrl, string? urlFilter = null);
 }
 
 public partial class LinkParser : ILinkParser
@@ -17,7 +18,7 @@ public partial class LinkParser : ILinkParser
     //  3: single-quoted value
     //  4: unquoted value
 
-    public Link[] GetLinks(string utf8EncodedString, string sourceUrl)
+    public Link[] GetLinks(string utf8EncodedString, string sourceUrl, string? urlFilter = null)
     {
         if (string.IsNullOrWhiteSpace(utf8EncodedString))
         {
@@ -33,6 +34,8 @@ public partial class LinkParser : ILinkParser
         {
             throw new ArgumentException("Source URL must be an absolute URI.", nameof(sourceUrl));
         }
+
+        urlFilter ??= $"{baseUri.Scheme}://{baseUri.Host}/*";
 
         var candidates = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
@@ -100,6 +103,8 @@ public partial class LinkParser : ILinkParser
                 continue;
             }
 
+            if(uri.ToString().IsMatch(urlFilter) is false) continue;
+            
             links.Add(new Link
             {
                 SourceUrl = sourceUrl,

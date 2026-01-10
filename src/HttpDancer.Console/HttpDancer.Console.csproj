@@ -15,7 +15,9 @@
 
     <ItemGroup>
       <ProjectReference Include="..\HttpDancer.Core\HttpDancer.Core.csproj" />
+      <ProjectReference Include="..\HttpDancer.FileFormats\HttpDancer.FileFormats.csproj" />
       <ProjectReference Include="..\HttpDancer.FileSystemDownloader\HttpDancer.FileSystemDownloader.csproj" />
+      <ProjectReference Include="..\HttpDancer.Scheduling\HttpDancer.Scheduling.csproj" />
     </ItemGroup>
 
     <ItemGroup>
@@ -39,5 +41,15 @@
           <CopyToOutputDirectory>Always</CopyToOutputDirectory>
           <CopyToPublishDirectory>Always</CopyToPublishDirectory>
         </None>
+        <None Update="digst.http">
+          <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </None>
+        <None Update="xmlsitemap.xml">
+          <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </None>
+    </ItemGroup>
+
+    <ItemGroup>
+      <Compile Include="Workflows\RatedHttpFileRunner2.cs" />
     </ItemGroup>
 </Project>

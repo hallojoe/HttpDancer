@@ -56,6 +56,8 @@ public class FileSystemDownloadRunner(
         
         var downloadResult = await downloaderService.DownloadAsync();
 
+
+
         logger.LogInformation("Download job completed. Success={Success}", downloadResult);
 
         return downloadResult;
@@ -142,7 +144,7 @@ public class FileSystemDownloadRunner(
 
         if (downloadResponse.Value.BodyBytes is not { Length: > 0 })
         {
-            logger.LogInformation("Skipping further processing of {Url} because BodyBytes is empty.", downloadResponse.Value.Url);
+            logger.LogDebug("Skipping further processing of {Url} because BodyBytes is empty.", downloadResponse.Value.Url);
             return;
         }
 
@@ -150,12 +152,12 @@ public class FileSystemDownloadRunner(
         
         if (minificationSettingsOptionsMonitor.CurrentValue.Enabled)
         {
-            logger.LogInformation("Minifying HTML for {Url}.", downloadResponse.Value.Url);
+            logger.LogDebug("Minifying HTML for {Url}.", downloadResponse.Value.Url);
             downloadResponse = await MinifyHtml(downloadResponse);
         }
         
         await fileSystemDataProvider.WriteBytesAsync(urlAndPathInformation.PathNameAndExtension, downloadResponse.Value.BodyBytes!);
-        logger.LogInformation("Saved content to {Path}", urlAndPathInformation.PathNameAndExtension);
+        logger.LogDebug("Saved content to {Path}", urlAndPathInformation.PathNameAndExtension);
 
         
         // Persist data
@@ -199,6 +201,8 @@ public class FileSystemDownloadRunner(
     {
         var remainingBudget = Math.Max(0, status.MaxRequests - status.ScheduledCount);
 
+        Console.Clear();
+        
         logger.LogInformation(
             "Status: Processed={Processed}/{MaxRequests}, Pending={Pending}, InFlight={InFlight}, Scheduled={Scheduled}, RemainingBudget={RemainingBudget}, EstimatedRemaining={Remaining}",
             status.ProcessedCount,
@@ -257,7 +261,7 @@ public class FileSystemDownloadRunner(
         
         downloadResponse.Value.BodyBytes = utf8EncodedHtmlStringBytes;
 
-        logger.LogInformation("Minified HTML for {Url} (OriginalLength={Original}, MinifiedLength={Minified})",
+        logger.LogDebug("Minified HTML for {Url} (OriginalLength={Original}, MinifiedLength={Minified})",
             downloadResponse.Value.Url,
             utf8EncodedHtmlString.Length,
             minifiedUtf8EncodedHtmlString.Length);

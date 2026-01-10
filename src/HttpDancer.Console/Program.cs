@@ -1,9 +1,11 @@
-﻿using HttpDancer.FileSystemDownloader;
-using HttpDancer.FileSystemDownloader.Configuration;
-using HttpDancer.Naming;
+﻿using System.Diagnostics;
+using System.Text;
+using HttpDancer.Console.Workflows;
+using HttpDancer.Core.Http.Clients;
+using HttpDancer.FileFormats.HttpFile;
+using HttpDancer.Scheduling.RatedScheduling;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Options;
 
 namespace HttpDancer.Console;
 
@@ -16,8 +18,6 @@ public class Program
 
         // Configure application
         builder.ConfigureApplication();
-
-        // 
         
         // Build host
         using var host = builder.Build();
@@ -30,45 +30,44 @@ public class Program
         // var urlNameProvider = scope.ServiceProvider.GetRequiredService<IUrlNamer>();
         // var fileSystemDownloaderSettings = scope.ServiceProvider.GetRequiredService<IOptions<FileSystemDownloaderSettings>>();
         // var dataProvider = scope.ServiceProvider.GetRequiredService<IFileSystemDataProvider>();
-
-        var fileSystemDownloadRunner = scope.ServiceProvider.GetRequiredService<IFileSystemDownloadRunner>();
-
-        var urlProvider = scope.ServiceProvider.GetRequiredService<IUrlProvider>();
-        
-        var urls = await urlProvider.GetUrlsAsync();
-
-        // var urlNames = urls.Select(x => urlNameProvider.GetNameAndPath(x)).ToList();
-     
-        var _ = await fileSystemDownloadRunner.Run(urls, true);
-
-        
-        // var dataFiles = Directory.GetFiles(fileSystemDownloaderSettings.Value.Workspace!, "*.data.json", SearchOption.AllDirectories);
-
-        // var categories = new List<string>();
-        // foreach (var dataFile in dataFiles)
-        // {
-        //     var dataContent = await dataProvider.ReadStringAsync(dataFile.Replace(fileSystemDownloaderSettings.Value.Workspace!, ""));
-        //     if (string.IsNullOrWhiteSpace(dataContent))
-        //     {
-        //         continue;
-        //     }
-        //     
-        //     var data = JsonSerializer.Deserialize<Dictionary<string, string?>>(dataContent);
-        //     if (data is null)
-        //     {
-        //         continue;
-        //     }
+        // var ratedScheduleFactory = scope.ServiceProvider.GetRequiredService<IRatedScheduleFactory>();
+        // var ratedScheduleRunner = scope.ServiceProvider.GetRequiredService<IRatedScheduleRunner>();
+        // var httpClient = scope.ServiceProvider.GetRequiredService<IHttpClient>();
+        // var httpFileFactory = scope.ServiceProvider.GetRequiredService<HttpFileFactory>();
+        var httpFileRenderer = scope.ServiceProvider.GetRequiredService<IHttpFileRenderer>();
+        // var httpFileDocumentFromUrl = await httpFileFactory.CreateAsync(new Uri("https://danbolig.dk/sitemap.website.xml"));
+        // var httpFileDocumentAsStringFromUnStructuredDocument2 = httpFileRenderer.Render(
+        //     httpFileDocumentFromUrl,
+        //     new HttpFileRenderOptions(true, false));
         //
-        //     if (data.TryGetValue("pageTag", out var value))
-        //     {
-        //         if(!string.IsNullOrWhiteSpace(value?.Trim())) categories.Add(value.Trim());
-        //     }
-        //
-        // }
+        // await File.WriteAllTextAsync(
+        //     Path.Combine(Directory.GetCurrentDirectory(), "danbolig.http.rendered.html"), 
+        //     httpFileDocumentAsStringFromUnStructuredDocument2,
+        //     Encoding.UTF8);
+        
+        var ratedHttpFileRunner = scope.ServiceProvider.GetRequiredService<RatedHttpFileRunner>();
 
-        // await dataProvider.WriteStringAsync("categories.txt", string.Join(Environment.NewLine, categories.Distinct().ToArray()));
+        // var xprocessedHttpFileDocument = await ratedHttpFileRunner.Run(
+        //     new Uri("https://digst.dk/sitemap/"), 
+        //     1, 
+        //     TimeSpan.FromSeconds(3), 
+        //     CancellationToken.None);
+
+        var processedHttpFileDocument = await ratedHttpFileRunner.Run(
+            new Uri("https://vitusguld.dk"), 
+            1, 
+            TimeSpan.FromSeconds(30), 
+            CancellationToken.None);
         
-        
+        var processedHttpFileDocumentString = httpFileRenderer.Render(
+            processedHttpFileDocument,
+            new HttpFileRenderOptions(true, false));
+
+        await File.WriteAllTextAsync(
+            Path.Combine(Directory.GetCurrentDirectory(), "vitus.dk.http.log"), 
+            processedHttpFileDocumentString,
+            Encoding.UTF8);
+
         System.Console.WriteLine("Crawler finished. Press any key to exit...");
         System.Console.ReadKey();
     }

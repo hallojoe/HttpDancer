@@ -17,6 +17,11 @@ public sealed class ResponseMessage
     public string?  Url => Uri?.ToString();
 
     /// <summary>
+    /// 
+    /// </summary>
+    public required RequestMessage Request { get; set; }
+    
+    /// <summary>
     /// HTTP method used to fetch the resource.
     /// </summary>
     public string? Method { get; init; }

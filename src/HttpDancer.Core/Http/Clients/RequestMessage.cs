@@ -44,6 +44,7 @@ public sealed class RequestMessage
     /// <summary>
     /// Optional per-request timeout. If set, the request will be canceled after this duration,
     /// independently of HttpClient.Timeout and the outer cancellation token.
+    ///  
     /// </summary>
     public TimeSpan? Timeout { get; init; }
     

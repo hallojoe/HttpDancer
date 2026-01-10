@@ -44,7 +44,7 @@ public class ChanneledDownloadService : IDownloadService
     /// <summary>
     /// Bounded callback queue so response/status handlers never block download workers; oldest callbacks are dropped if the queue overflows.
     /// </summary>
-    private readonly Channel<CallbackWork> _callbackChannel = Channel.CreateBounded<CallbackWork>(new BoundedChannelOptions(256)
+    private readonly Channel<CallbackWork> _callbackChannel = Channel.CreateBounded<CallbackWork>(new BoundedChannelOptions(4096)
     {
         SingleReader = true,
         SingleWriter = false,
@@ -118,6 +118,7 @@ public class ChanneledDownloadService : IDownloadService
         if (urls is null) return 0;
 
         var added = 0;
+
         foreach (var url in urls
             .Where(s => string.IsNullOrWhiteSpace(s) is false)
             .Select(s => s!.Trim())
@@ -151,8 +152,10 @@ public class ChanneledDownloadService : IDownloadService
         // Monitor loop: completes the writer when we're definitively done scheduling.
         var monitor = Task.Run(async () =>
         {
+
             try
             {
+
                 while (!token.IsCancellationRequested)
                 {
                     // If the budget is hit, we stop accepting new work.
@@ -188,7 +191,7 @@ public class ChanneledDownloadService : IDownloadService
         {
             await Task.WhenAll(workers.Concat([monitor])).ConfigureAwait(false);
 
-            _logger.LogInformation("Download complete. Total processed: {Count}", _processedUrls.Count);
+            _logger.LogDebug("Download complete. Total processed: {Count}", _processedUrls.Count);
 
             return !cancellationToken.IsCancellationRequested;
         }
@@ -282,12 +285,12 @@ public class ChanneledDownloadService : IDownloadService
                         switch (decision)
                         {
                             case RequestDecision.SkipOnce:
-                                _logger.LogInformation("Pre-download: skipping once for {Url}", url);
+                                _logger.LogDebug("Pre-download: skipping once for {Url}", url);
                                 continue;
 
                             case RequestDecision.SkipPermanently:
                                 _processedUrls.TryAdd(url, 0);
-                                _logger.LogInformation("Pre-download: permanently skipped {Url}", url);
+                                _logger.LogDebug("Pre-download: permanently skipped {Url}", url);
                                 continue;
 
                             case RequestDecision.Proceed:
@@ -321,7 +324,7 @@ public class ChanneledDownloadService : IDownloadService
 
                     Interlocked.Increment(ref _inFlight);
                     
-                    _logger.LogInformation("Downloading: {Url} (#{Request})", url, issued);
+                    _logger.LogDebug("Downloading: {Url} (#{Request})", url, issued);
 
                     try
                     {
@@ -385,7 +388,7 @@ public class ChanneledDownloadService : IDownloadService
                 EnqueueCallback(new CallbackWork(CallbackKind.Response, response, null));
             }
             
-            _logger.LogInformation("Downloaded: {Url}", url);
+            _logger.LogDebug("Downloaded: {Url}", url);
         }
         catch (OperationCanceledException)
         {

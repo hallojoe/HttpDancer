@@ -21,10 +21,33 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddDefaultHttpClient(this IServiceCollection services, IConfiguration? configuration = null)
     {
         
-        services.AddHttpDancerSettings(configuration);
         services.AddSingleton<ICorrelationIdProvider, CorrelationIdProvider>();
         services.AddTransient<CorrelationIdHandler>();
 
+        // Add throttling options and handler
+
+        // var throttleOptionsBuilder = services.AddOptions<PerHostRpsThrottleOptions>();
+        // if (configuration is not null)
+        // {
+        //     throttleOptionsBuilder.Bind(configuration.GetSection(PerHostRpsThrottleOptions.Key));
+        // }
+        //
+        // services.Configure<PerHostRpsThrottleOptions>(opt =>
+        // {
+        //     opt.DefaultRps = 2;          // example.com max 2 RPS (default for all hosts)
+        //     opt.DefaultBurst = 2;
+        //     opt.QueueLimit = 1024;       // queue/wait instead of failing fast
+        //
+        //     // Optional overrides:
+        //     opt.Overrides["example.com"] = new HostLimit { Rps = 2, Burst = 2 };
+        //     opt.Overrides["api.somewhere.com"] = new HostLimit { Rps = 10, Burst = 20 };
+        // });
+        //
+        // services.AddTransient<PerHostRpsThrottleHandler>();
+
+        services.AddTransient<PerHostRpsThrottleHandler>();
+
+        // Add default HttpClient
         
         services.AddHttpClient<IHttpClient, DefaultHttpClient>((serviceProvider, httpClient) =>
         {
@@ -57,6 +80,8 @@ public static class ServiceCollectionExtensions
                 KeepAlivePingPolicy = handlerSettings.KeepAlivePingPolicy
             };
         })
+        // Order matters: throttling should be early (before send)
+        //.AddHttpMessageHandler<PerHostRpsThrottleHandler>()        
         .AddHttpMessageHandler<CorrelationIdHandler>();
         
         return services;
