@@ -1,7 +1,34 @@
 namespace HttpDancer.Core.Http.Clients;
 
-public sealed class RequestMessage
+public sealed class HttpPipelineOptions
 {
+    /// <summary>
+    /// Optional override: whether to read the body for successful responses.
+    /// If null, the client falls back to HttpDancerSettings.ReadBodyOnSuccess (except for HEAD).
+    /// </summary>
+    public bool? ReadBodyOnSuccess { get; init; }
+
+    /// <summary>
+    /// Optional override: whether to read the body for non-success responses.
+    /// If null, the client falls back to HttpDancerSettings.ReadBodyOnNonSuccess (except for HEAD).
+    /// </summary>
+    public bool? ReadBodyOnNonSuccess { get; init; }
+
+    /// <summary>
+    /// Optional callback to decide whether to read the body after inspecting the response metadata
+    /// (headers, status, etc). Return true to force read, false to skip, null to use defaults.
+    /// </summary>
+    public Func<HttpResponseMessage, Task<bool?>>? ShouldReadBodyAsync { get; init; }
+}
+
+[Serializable]
+public sealed class SerializableRequestMessage
+{
+    /// <summary>
+    /// Original URI for the request.
+    /// </summary>
+    // public required string OriginalUrl { get; init; }
+
     /// <summary>
     /// Target URI for the request.
     /// </summary>
@@ -22,6 +49,12 @@ public sealed class RequestMessage
     /// Keys are case-insensitive.
     /// </summary>
     public IDictionary<string, string?>? Headers { get; init; }
+    
+    /// <summary>
+    /// Optional per-request content headers to be added to the request.
+    /// Keys are case-insensitive.
+    /// </summary>
+    public IDictionary<string, string?>? ContentHeaders { get; init; }
 
     /// <summary>
     /// Optional override: whether to read the body for successful responses.

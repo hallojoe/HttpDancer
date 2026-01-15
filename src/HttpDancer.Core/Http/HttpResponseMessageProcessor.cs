@@ -6,7 +6,7 @@ namespace HttpDancer.Core.Http;
 public interface IHttpResponseMessageProcessor
 {
     Task<CompletedHttpResponseMessage> ProcessAsync(
-        RequestMessage requestMessage,
+        SerializableRequestMessage serializableRequestMessage,
         HttpResponseMessage response,
         string correlationId,
         Uri originalUri,
@@ -16,16 +16,10 @@ public interface IHttpResponseMessageProcessor
         CancellationToken cancellationToken);
 }
 
-public static class HttpConstants
-{
-    public const string DefaultContentType = "application/octet-stream";
-    public static readonly string[] MethodsWithNoResponseBody = ["HEAD", "TRACE", "CONNECT"];
-}
-
 public class HttpResponseMessageProcessor(ILogger<HttpResponseMessageProcessor> logger) : IHttpResponseMessageProcessor
 {
     public async Task<CompletedHttpResponseMessage> ProcessAsync(
-        RequestMessage requestMessage,
+        SerializableRequestMessage serializableRequestMessage,
         HttpResponseMessage response,
         string correlationId,
         Uri originalUri,
@@ -65,7 +59,7 @@ public class HttpResponseMessageProcessor(ILogger<HttpResponseMessageProcessor> 
 
         var responseMessage = new CompletedHttpResponseMessage
         {
-            Request = requestMessage,
+            SerializableRequest = serializableRequestMessage,
             Method = response.RequestMessage?.Method.Method,
             ContentType = contentType,
             StatusCode = statusCode,
@@ -96,7 +90,7 @@ public class HttpResponseMessageProcessor(ILogger<HttpResponseMessageProcessor> 
                 }
                 catch (Exception exception)
                 {
-                    logger.LogWarning(
+                    logger.LogDebug(
                         exception,
                         "Failed to read success body for {Uri}. CorrelationId={CorrelationId}",
                         effectiveUri,
@@ -114,7 +108,7 @@ public class HttpResponseMessageProcessor(ILogger<HttpResponseMessageProcessor> 
             return responseMessage;
         }
 
-        logger.LogWarning(
+        logger.LogDebug(
             "Non-success status received: {Message} (StatusCode: {StatusCode}, CorrelationId={CorrelationId})",
             message,
             (int)statusCode,

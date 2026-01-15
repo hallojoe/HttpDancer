@@ -67,7 +67,7 @@ public sealed class PerHostRpsThrottleHandler : DelegatingHandler
             // If the limiter is configured with QueueLimit=0, you might hit this when at capacity.
             // With QueueLimit > 0, you'll normally wait and acquire.
             _logger.LogWarning("Per-host throttle rejected request to {Uri}", request.RequestUri);
-            throw new HttpRequestException("Request throttled (rate limit lease not acquired).");
+            throw new HttpRequestException("SerializableRequest throttled (rate limit lease not acquired).");
         }
 
         // Optional: log delay/metrics if lease contains metadata

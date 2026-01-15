@@ -178,12 +178,12 @@ public class FileSystemDownloadRunner(
         logger.LogDebug("Saved data JSON for {Url}.", downloadResponse.Value.Url);
     }
 
-    private async Task<bool?> HandleShouldReadBodyAsync(CompletedHttpResponseMessage completedHttpResponseMessage)
+    private async Task<bool?> HandleShouldReadBodyAsync(HttpResponseMessage httpResponseMessage)
     {
         var httpDancerSeSettingsMonitorValue = httpDancerSettingsOptionsMonitor.CurrentValue;
-        var contentTypeShouldDownloadContent = completedHttpResponseMessage.ContentType?.IsMatch(httpDancerSeSettingsMonitorValue.DefaultClient.AllowedContentTypes) is true;
+        var contentTypeShouldDownloadContent = httpResponseMessage.Content.Headers.ContentType?.MediaType?.IsMatch(httpDancerSeSettingsMonitorValue.DefaultClient.AllowedContentTypes) is true;
 
-        logger.LogDebug("ShouldReadBody? Url={Url}, ContentType={ContentType}, Decision={Decision}", completedHttpResponseMessage.Url, completedHttpResponseMessage.ContentType, contentTypeShouldDownloadContent);
+        logger.LogDebug("ShouldReadBody? Url={Url}, ContentType={ContentType}, Decision={Decision}", httpResponseMessage.RequestMessage?.RequestUri, httpResponseMessage.Content.Headers.ContentType?.MediaType, contentTypeShouldDownloadContent);
         return contentTypeShouldDownloadContent;
     }
 
@@ -191,7 +191,7 @@ public class FileSystemDownloadRunner(
     {
         var httpDancerSeSettingsMonitorValue = httpDancerSettingsOptionsMonitor.CurrentValue;
         var requestShouldProceed = requestUrl.IsMatch(httpDancerSeSettingsMonitorValue.DefaultClient.AllowedHosts);
-        logger.LogDebug("Request decision for {Url}: {Decision}", requestUrl, requestShouldProceed ? "Proceed" : "Skip");
+        logger.LogDebug("SerializableRequest decision for {Url}: {Decision}", requestUrl, requestShouldProceed ? "Proceed" : "Skip");
         return requestShouldProceed
             ? RequestDecision.Proceed
             : RequestDecision.SkipPermanently;

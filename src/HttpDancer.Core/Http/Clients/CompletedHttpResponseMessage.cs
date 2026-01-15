@@ -19,7 +19,7 @@ public abstract class HttpResponseMessageBase
     /// <summary>
     /// 
     /// </summary>
-    public required RequestMessage Request { get; set; }
+    public required SerializableRequestMessage SerializableRequest { get; set; }
     
     /// <summary>
     /// HTTP method used to fetch the resource.
@@ -88,10 +88,8 @@ public sealed class CompletedHttpResponseMessage : HttpResponseMessageBase
         BodyLength = source.BodyLength;
         Message = source.Message;
         CorrelationId = source.CorrelationId;
-        Request = source.Request;
-        Headers = source.Headers is null
-            ? null
-            : source.Headers.ToDictionary(
+        SerializableRequest = source.SerializableRequest;
+        Headers = source.Headers?.ToDictionary(
                 kvp => kvp.Key,
                 kvp => (IReadOnlyList<string>)kvp.Value.ToArray(),
                 StringComparer.OrdinalIgnoreCase);

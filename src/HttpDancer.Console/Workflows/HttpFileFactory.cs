@@ -10,7 +10,30 @@ public class HttpFileFactory(
     IHttpClient httpClient, 
     IHttpFileParser httpFileParser)
 {
-        
+
+    public HttpFileDocument Create(HttpFileDocument httpFileDocument, HttpFileDocument httpFileDocumentLog)
+    {
+        var variables = new Dictionary<string, string>(httpFileDocument.Variables);
+        var variablesLog = new Dictionary<string, string>(httpFileDocumentLog.Variables);
+        foreach (var variableLogKey in variablesLog.Keys)
+        {
+            if (!variables.TryAdd(variableLogKey, variablesLog[variableLogKey]))
+            {
+                variables[variableLogKey] = variablesLog[variableLogKey];
+            }
+        }
+
+        var requests = new List<HttpRequestDefinition>(httpFileDocument.Requests);
+        var requestsLog = new List<HttpRequestDefinition>(httpFileDocumentLog.Requests);
+
+        foreach (var requestAppendix in requestsLog)
+        {
+            requests.RemoveAll(request => request.Url.ToString().Equals(requestAppendix.Url.ToString(), StringComparison.OrdinalIgnoreCase));
+        }
+
+        return new HttpFileDocument(variables, requests);               
+    }
+
     public HttpFileDocument Create(
         HttpFileDocument httpFileDocument,
         RatedSchedule ratedSchedule,
@@ -90,7 +113,7 @@ public class HttpFileFactory(
         if (!string.IsNullOrWhiteSpace(location))
         {
             httpRequestDefinitionHeaders.Add(
-                new HttpHeader("X-Response-Redirect", location)
+                new HttpHeader("X-Response-Location", location)
             );
         }
 
@@ -107,7 +130,7 @@ public class HttpFileFactory(
     /// <exception cref="InvalidOperationException">Thrown if the response body is null or the content type is not supported.</exception>
     public async Task<HttpFileDocument> CreateAsync(Uri uri, CancellationToken cancellationToken = default)
     {
-        var response = await httpClient.GetAsync(uri, cancellationToken);
+        var response = await httpClient.SendAsync(new SerializableRequestMessage() { Uri = uri, Method = HttpMethod.Get}, cancellationToken);
         if (response.BodyBytes is null || response.ContentType?.IsMatch("text/*, application/*") is not true)
         {
             throw new InvalidOperationException("Response body is not textual content.");

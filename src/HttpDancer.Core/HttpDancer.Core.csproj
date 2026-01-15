@@ -15,5 +15,10 @@
 
     <ItemGroup>
       <ProjectReference Include="..\HttpDancer.Extensions\HttpDancer.Extensions.csproj" />
+      <ProjectReference Include="..\HttpDancer.Naming\HttpDancer.Naming.csproj" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <Compile Include="Http\Clients\DefaultHttpClient2.cs" />
     </ItemGroup>
 </Project>

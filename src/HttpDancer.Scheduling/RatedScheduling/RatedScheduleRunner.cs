@@ -5,7 +5,7 @@ namespace HttpDancer.Scheduling.RatedScheduling;
 
 /// <summary>
 /// An enhanced runner for large schedules that:
-/// - Uses <see cref="Stopwatch"/> for monotonic timing
+/// - Uses <see cref="Stopwatch"/> for monotonic timing (immune to system clock changes)
 /// - Batches offsets that fall within a tolerance window so "equal-ish" entries run together
 /// - Validates inputs (rejects negative offsets, invalid capacities) and avoids precision loss
 ///
@@ -16,8 +16,12 @@ namespace HttpDancer.Scheduling.RatedScheduling;
 public sealed class RatedScheduleRunner(RatedScheduleRunnerSettings? ratedScheduleRunnerSettings = null)
     : IRatedScheduleRunner
 {
+    // Sorting rule when we materialize schedules:
+    // 1) run by "bucketed" time (batched window), then
+    // 2) by original index to keep deterministic ordering within a bucket.
     private static readonly IComparer<ScheduledItem> ScheduledItemComparer = new ScheduledItemBucketThenIndexComparer();
 
+    // Default runner behavior when no per-run settings are provided.
     private readonly RatedScheduleRunnerSettings _defaults = ratedScheduleRunnerSettings ?? new();
 
     /// <inheritdoc />
@@ -87,6 +91,7 @@ public sealed class RatedScheduleRunner(RatedScheduleRunnerSettings? ratedSchedu
         long? startStopwatchTimestamp = null,
         CancellationToken cancellationToken = default)
     {
+        // If caller didn't override, use runner defaults.
         var effective = settingsOverride ?? _defaults;
 
         return RunInternalAsync(
@@ -109,36 +114,61 @@ public sealed class RatedScheduleRunner(RatedScheduleRunnerSettings? ratedSchedu
         ArgumentNullException.ThrowIfNull(schedule);
         ArgumentNullException.ThrowIfNull(executeAsync);
 
+        // Fail fast if the provided settings don't make sense (e.g. non-positive parallelism).
         ValidateEffectiveSettings(effectiveSettings);
 
-        // Stopwatch timestamp only.
+        // We measure "time since start" using Stopwatch ticks (monotonic).
+        // If the caller doesn't provide a start point, we start "now".
         var effectiveStartStopwatchTimestamp = startStopwatchTimestamp ?? Stopwatch.GetTimestamp();
+
+        // Catch obvious mistakes like passing DateTime.UtcNow.Ticks.
         ValidateStartStopwatchTimestamp(effectiveStartStopwatchTimestamp);
 
+        // Configure the Dataflow ActionBlock that actually executes work items.
+        // Think of it as a bounded / throttled async worker queue.
         var executionOptions = new ExecutionDataflowBlockOptions
         {
+            // This token cancels:
+            // - DelayUntilAsync waits (because we pass it through)
+            // - posting to the block (SendAsync observes it)
+            // - work inside the block if executeAsync respects the token
             CancellationToken = cancellationToken,
+
+            // How many executeAsync calls are allowed to run at the same time.
             MaxDegreeOfParallelism = effectiveSettings.MaxDegreeOfParallelism,
+
+            // We don't need completion order to match input order.
+            // Turning ordering off allows higher throughput.
             EnsureOrdered = false
         };
 
         if (effectiveSettings.BoundedCapacity is { } cap)
         {
+            // Backpressure: if the queue fills up, SendAsync will then await until there is room.
+            // This prevents unbounded memory usage when the schedule is huge / execution is slow.
             executionOptions.BoundedCapacity = cap;
         }
 
         var executionBlock = new ActionBlock<ScheduledItem>(
             async item =>
             {
+                // Convert stored ticks back to a TimeSpan for the callback.
                 var offset = TimeSpan.FromTicks(item.OffsetTimeSpanTicks);
+
+                // Execute the user callback for this schedule entry.
+                // Important: we pass the same cancellationToken, so shutdown/stop can interrupt in-flight work.
                 await executeAsync(item.Index, offset, cancellationToken).ConfigureAwait(false);
             },
             executionOptions);
 
         try
         {
+            // Producer side:
+            // - waits until each time bucket becomes "due"
+            // - posts items into the ActionBlock (subject to backpressure)
             if (assumeSortedSchedule)
             {
+                // Streaming mode: schedule is already sorted => we can walk it once with minimal allocations.
                 await RunSortedStreamingAsync(
                         schedule,
                         executionBlock,
@@ -149,6 +179,7 @@ public sealed class RatedScheduleRunner(RatedScheduleRunnerSettings? ratedSchedu
             }
             else
             {
+                // Unsorted mode: we materialize, bucket, and sort so we can wait per bucket in order.
                 await RunUnsortedMaterializeAndSortAsync(
                         schedule,
                         executionBlock,
@@ -158,13 +189,32 @@ public sealed class RatedScheduleRunner(RatedScheduleRunnerSettings? ratedSchedu
                     .ConfigureAwait(false);
             }
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Cancellation is not an error here.
+            // This is the normal path when the app is shutting down or the user manually stops execution.
+        }
         finally
         {
-            // Always complete the block so awaiting Completion won't hang.
+            // Tell the ActionBlock "no more items will be posted".
+            // This is required so Completion can transition to a final state (RanToCompletion/Faulted/Canceled).
             executionBlock.Complete();
         }
 
-        await executionBlock.Completion.ConfigureAwait(false);
+        try
+        {
+            // Consumer side:
+            // Wait for all already-posted items to finish executing.
+            // (If you want a "hard stop" mode, you would skip this await when canceled.)
+            await executionBlock.Completion.ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Depending on timing, the block may surface cancellation here too.
+            // We still treat that as normal shutdown.
+        }
+
+        // Return the stopwatch start point so callers can relate offsets to the same origin if needed.
         return effectiveStartStopwatchTimestamp;
     }
 
@@ -175,17 +225,25 @@ public sealed class RatedScheduleRunner(RatedScheduleRunnerSettings? ratedSchedu
         RatedScheduleRunnerSettings settings,
         CancellationToken cancellationToken)
     {
+        // Bucket size in ticks (0 means "no bucketing").
         var toleranceTimeSpanTicks = settings.BatchTolerance.Ticks;
 
+        // Index is the original position in the input sequence (used by executeAsync).
         var index = 0;
+
+        // Tracks which bucket we've already waited for,
+        // so we only delay once per bucket and then post all items in that bucket.
         long? currentBatchBucketTicks = null;
 
         foreach (var offset in sortedSchedule)
         {
+            // Stop fast on shutdown/manual cancel.
             cancellationToken.ThrowIfCancellationRequested();
 
             var offsetTimeSpanTicks = offset.Ticks;
 
+            // Negative offsets don't make sense for "time since start".
+            // Either reject them, or skip them if settings says so.
             if (offsetTimeSpanTicks < 0)
             {
                 if (!settings.SkipNegativeOffsets)
@@ -198,14 +256,18 @@ public sealed class RatedScheduleRunner(RatedScheduleRunnerSettings? ratedSchedu
                 continue;
             }
 
-            // Assumes offsets are non-decreasing.
+            // Because the schedule is sorted (non-decreasing), we can bucket and process in a single pass.
+            // We round UP to the end of the window so we never run earlier than requested.
             var bucketTimeSpanTicks = toleranceTimeSpanTicks == 0
                 ? offsetTimeSpanTicks
                 : BucketCeiling(offsetTimeSpanTicks, toleranceTimeSpanTicks); // never runs early
 
+            // When we enter a new bucket, we wait until that bucket's time has arrived.
+            // After that, all items in the same bucket can be posted immediately (they're "due").
             if (currentBatchBucketTicks is null || bucketTimeSpanTicks != currentBatchBucketTicks.Value)
             {
                 currentBatchBucketTicks = bucketTimeSpanTicks;
+
                 await DelayUntilAsync(
                         startStopwatchTimestamp,
                         TimeSpan.FromTicks(bucketTimeSpanTicks),
@@ -213,7 +275,8 @@ public sealed class RatedScheduleRunner(RatedScheduleRunnerSettings? ratedSchedu
                     .ConfigureAwait(false);
             }
 
-            // SendAsync can await when bounded capacity is reached (backpressure).
+            // Post the work item to the ActionBlock.
+            // If bounded capacity is set and the queue is full, this awaits until there's room (backpressure).
             await executionBlock.SendAsync(
                     new ScheduledItem(index, offsetTimeSpanTicks, bucketTimeSpanTicks),
                     cancellationToken)
@@ -232,11 +295,12 @@ public sealed class RatedScheduleRunner(RatedScheduleRunnerSettings? ratedSchedu
     {
         var toleranceTimeSpanTicks = settings.BatchTolerance.Ticks;
 
-        // Pre-size list if we can (reduces allocations).
+        // If we know the count, pre-size the list to reduce reallocations.
         var scheduledItems = schedule is ICollection<TimeSpan> c
             ? new List<ScheduledItem>(c.Count)
             : new List<ScheduledItem>();
 
+        // First pass: convert offsets into ScheduledItems and compute their bucket.
         var index = 0;
         foreach (var offset in schedule)
         {
@@ -255,6 +319,7 @@ public sealed class RatedScheduleRunner(RatedScheduleRunnerSettings? ratedSchedu
                 continue;
             }
 
+            // Round UP to the bucket boundary so we never run early.
             var bucketTimeSpanTicks = toleranceTimeSpanTicks == 0
                 ? offsetTimeSpanTicks
                 : BucketCeiling(offsetTimeSpanTicks, toleranceTimeSpanTicks); // never runs early
@@ -263,7 +328,9 @@ public sealed class RatedScheduleRunner(RatedScheduleRunnerSettings? ratedSchedu
             index = checked(index + 1);
         }
 
-        // Sort by bucketed time, then original index for deterministic ordering.
+        // Now we sort, so we can:
+        // - wait once per bucket in time order
+        // - then post all items that belong to that bucket
         scheduledItems.Sort(ScheduledItemComparer);
 
         var position = 0;
@@ -271,14 +338,17 @@ public sealed class RatedScheduleRunner(RatedScheduleRunnerSettings? ratedSchedu
         {
             cancellationToken.ThrowIfCancellationRequested();
 
+            // The bucket we are about to execute.
             var batchBucketTimeSpanTicks = scheduledItems[position].BucketTimeSpanTicks;
 
+            // Wait until this bucket's time is reached relative to the start timestamp.
             await DelayUntilAsync(
                     startStopwatchTimestamp,
                     TimeSpan.FromTicks(batchBucketTimeSpanTicks),
                     cancellationToken)
                 .ConfigureAwait(false);
 
+            // Post every item in this bucket.
             while (position < scheduledItems.Count &&
                    scheduledItems[position].BucketTimeSpanTicks == batchBucketTimeSpanTicks)
             {
@@ -302,8 +372,8 @@ public sealed class RatedScheduleRunner(RatedScheduleRunnerSettings? ratedSchedu
             throw new ArgumentOutOfRangeException(nameof(boundedCapacity));
         }
 
-        // Minimal approach: clone defaults and override the two fields.
-        // If your settings type is immutable, replace with a "with" expression or factory.
+        // Clone defaults and override the chosen fields.
+        // (If your settings type is immutable, replace with a "with" expression or factory.)
         return new RatedScheduleRunnerSettings
         {
             BatchTolerance = defaults.BatchTolerance,
@@ -315,16 +385,19 @@ public sealed class RatedScheduleRunner(RatedScheduleRunnerSettings? ratedSchedu
 
     private static void ValidateEffectiveSettings(RatedScheduleRunnerSettings settings)
     {
+        // Must be >= 1 worker.
         if (settings.MaxDegreeOfParallelism <= 0)
         {
             throw new ArgumentOutOfRangeException(nameof(settings.MaxDegreeOfParallelism));
         }
 
+        // If set, bounded capacity must be >= 1 item.
         if (settings.BoundedCapacity is <= 0)
         {
             throw new ArgumentOutOfRangeException(nameof(settings.BoundedCapacity));
         }
 
+        // Negative tolerance doesn't make sense.
         if (settings.BatchTolerance < TimeSpan.Zero)
         {
             throw new ArgumentOutOfRangeException(nameof(settings.BatchTolerance));
@@ -353,7 +426,10 @@ public sealed class RatedScheduleRunner(RatedScheduleRunnerSettings? ratedSchedu
     /// </summary>
     private static long BucketCeiling(long valueTimeSpanTicks, long toleranceTimeSpanTicks)
     {
-        // tolerance must be > 0 when called
+        // Called only when tolerance > 0:
+        // example with tolerance=10:
+        // value=1..10  => 10
+        // value=11..20 => 20
         var adjusted = checked(valueTimeSpanTicks + toleranceTimeSpanTicks - 1);
         return checked(adjusted / toleranceTimeSpanTicks * toleranceTimeSpanTicks);
     }
@@ -369,16 +445,23 @@ public sealed class RatedScheduleRunner(RatedScheduleRunnerSettings? ratedSchedu
     {
         while (true)
         {
+            // If the app is stopping or the caller cancelled, stop waiting immediately.
             cancellationToken.ThrowIfCancellationRequested();
 
+            // How long since we started, based on a monotonic clock.
             var elapsed = Stopwatch.GetElapsedTime(startStopwatchTimestamp);
+
+            // How much longer until we reach the desired offset.
             var remaining = offset - elapsed;
 
+            // If we're past the target time, we're done waiting.
             if (remaining <= TimeSpan.Zero)
             {
                 return;
             }
 
+            // Sleep in larger chunks when far away, then smaller chunks near the target.
+            // This keeps CPU usage low without oversleeping by a lot.
             var sleep =
                 remaining > TimeSpan.FromHours(1) ? TimeSpan.FromMinutes(15) :
                 remaining > TimeSpan.FromMinutes(5) ? TimeSpan.FromMinutes(1) :
@@ -395,10 +478,14 @@ public sealed class RatedScheduleRunner(RatedScheduleRunnerSettings? ratedSchedu
 
     private sealed class ScheduledItemBucketThenIndexComparer : IComparer<ScheduledItem>
     {
-        public int Compare(ScheduledItem x, ScheduledItem y)
+        public int Compare(ScheduledItem scheduledItemA, ScheduledItem scheduledItemB)
         {
-            var c = x.BucketTimeSpanTicks.CompareTo(y.BucketTimeSpanTicks);
-            return c != 0 ? c : x.Index.CompareTo(y.Index);
+            var comparisonResult = scheduledItemA.BucketTimeSpanTicks.CompareTo(scheduledItemB.BucketTimeSpanTicks);
+
+            // If buckets differ, earlier bucket comes first. If same bucket, preserve input order by index.
+            return comparisonResult != 0
+                ? comparisonResult
+                : scheduledItemA.Index.CompareTo(scheduledItemB.Index);
         }
     }
 }

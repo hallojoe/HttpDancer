@@ -128,6 +128,24 @@ public class FileSystemDataProvider(IOptionsMonitor<FileSystemDownloaderSettings
         return result.Distinct().ToArray();
     }
 
+    public async Task AppendLinesAsync(string relativePathWithFilename, string[] lines, bool overwrite = true,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(relativePathWithFilename) || lines is { Length: 0 })
+        {
+            return;
+        }
+        var targetDirectory = Path.Join(_baseDirectory, relativePathWithFilename.Trim('/').Replace('/', '\\'));
+    
+        CreateDirectory(relativePathWithFilename);
+    
+        var pathAndFilename = CreateSafePath(relativePathWithFilename);
+    
+        var target = overwrite ? pathAndFilename : GetNextAvailableFileName(pathAndFilename);
+    
+        await File.AppendAllLinesAsync(target, lines, Encoding.UTF8, cancellationToken);
+    }
+
     public async Task<Dictionary<string, string>> ReadStringsAsync(string path, string searchPattern = "*", CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(_baseDirectory) || string.IsNullOrWhiteSpace(path))

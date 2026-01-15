@@ -249,21 +249,21 @@ public static partial class SafeFireAndForgetExtensions
         }
     }
 
-    static async void HandleSafeFireAndForget<T, TException>(ValueTask<T> valueTask, bool continueOnCapturedContext,
+    private static async void HandleSafeFireAndForget<T, TException>(ValueTask<T> valueTask, bool continueOnCapturedContext,
         Action<TException>? onException) where TException : Exception
     {
         try
         {
             await valueTask.ConfigureAwait(continueOnCapturedContext);
         }
-        catch (TException ex) when (_onException is not null || onException is not null)
+        catch (TException exception) when (_onException is not null || onException is not null)
         {
-            HandleException(ex, onException);
+            HandleException(exception, onException);
 
             if (_shouldAlwaysRethrowException)
             {
 #if NET5_0_OR_GREATER
-                ExceptionDispatchInfo.Throw(ex);
+                ExceptionDispatchInfo.Throw(exception);
 #else
 				throw;
 #endif
@@ -271,21 +271,21 @@ public static partial class SafeFireAndForgetExtensions
         }
     }
 
-    static async void HandleSafeFireAndForget<TException>(Task task, bool continueOnCapturedContext,
+    private static async void HandleSafeFireAndForget<TException>(Task task, bool continueOnCapturedContext,
         Action<TException>? onException) where TException : Exception
     {
         try
         {
             await task.ConfigureAwait(continueOnCapturedContext);
         }
-        catch (TException ex) when (_onException is not null || onException is not null)
+        catch (TException exception) when (_onException is not null || onException is not null)
         {
-            HandleException(ex, onException);
+            HandleException(exception, onException);
 
             if (_shouldAlwaysRethrowException)
             {
 #if NET5_0_OR_GREATER
-                ExceptionDispatchInfo.Throw(ex);
+                ExceptionDispatchInfo.Throw(exception);
 #else
 				throw;
 #endif
@@ -301,13 +301,13 @@ public static partial class SafeFireAndForgetExtensions
         {
             await task.ConfigureAwait(configureAwaitOptions);
         }
-        catch (TException ex) when (_onException is not null || onException is not null)
+        catch (TException exception) when (_onException is not null || onException is not null)
         {
-            HandleException(ex, onException);
+            HandleException(exception, onException);
 
             if (_shouldAlwaysRethrowException)
             {
-                ExceptionDispatchInfo.Throw(ex);
+                ExceptionDispatchInfo.Throw(exception);
             }
         }
     }

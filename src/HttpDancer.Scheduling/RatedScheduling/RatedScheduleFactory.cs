@@ -1,7 +1,7 @@
 namespace HttpDancer.Scheduling.RatedScheduling;
 
 /// <summary>
-/// Produces time-based execution plans for a fixed number of actions,
+/// Produces rated schedules(time-based execution plans) for a fixed number of actions,
 /// based on <see cref="RatedScheduleOptions"/>.
 /// </summary>
 public sealed class RatedScheduleFactory(RatedScheduleRunnerSettings? ratedScheduleRunnerSettings = null) : IRatedScheduleFactory

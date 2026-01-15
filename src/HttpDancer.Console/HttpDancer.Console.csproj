@@ -14,6 +14,7 @@
     </ItemGroup>
 
     <ItemGroup>
+      <ProjectReference Include="..\Gr8Io.Threading\Gr8Io.Threading.csproj" />
       <ProjectReference Include="..\HttpDancer.Core\HttpDancer.Core.csproj" />
       <ProjectReference Include="..\HttpDancer.FileFormats\HttpDancer.FileFormats.csproj" />
       <ProjectReference Include="..\HttpDancer.FileSystemDownloader\HttpDancer.FileSystemDownloader.csproj" />

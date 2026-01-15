@@ -136,7 +136,7 @@ public class ChanneledDownloadService : IDownloadService
     /// <summary>
     /// Run the download pipeline until:
     /// - Cancellation requested, OR
-    /// - Request budget is exhausted, AND the channel is drained, AND no downloads are in-flight.
+    /// - SerializableRequest budget is exhausted, AND the channel is drained, AND no downloads are in-flight.
     /// </summary>
     public async Task<bool> DownloadAsync(CancellationToken cancellationToken = default)
     {
@@ -324,7 +324,7 @@ public class ChanneledDownloadService : IDownloadService
 
                     Interlocked.Increment(ref _inFlight);
                     
-                    _logger.LogDebug("Downloading: {Url} (#{Request})", url, issued);
+                    _logger.LogDebug("Downloading: {Url} (#{SerializableRequest})", url, issued);
 
                     try
                     {
@@ -364,7 +364,7 @@ public class ChanneledDownloadService : IDownloadService
                 return;
             }
 
-            var requestMessage = new RequestMessage
+            var requestMessage = new SerializableRequestMessage
             {
                 Method = HttpMethod.Head,
                 Uri = targetUri,

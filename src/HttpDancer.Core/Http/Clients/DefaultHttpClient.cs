@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Net.Http.Headers;
 using HttpDancer.Core.Http.Observability;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -13,67 +12,26 @@ public class DefaultHttpClient(
     IHttpResponseMessageProcessor responseMessageProcessor,
     HttpClient httpClient) : IHttpClient
 {
-    #region Convenience methods
-
-    public Task<CompletedHttpResponseMessage> GetAsync(string url, CancellationToken cancellationToken)
-        => GetAsync(new Uri(url), cancellationToken);
-
-    public Task<CompletedHttpResponseMessage> GetAsync(Uri uri, CancellationToken cancellationToken)
-        => SendAsync(
-            new RequestMessage
-            {
-                Uri = uri,
-                Method = HttpMethod.Get
-            },
-            cancellationToken);
-
-    public Task<CompletedHttpResponseMessage> PostAsync(string url, HttpContent? content, CancellationToken cancellationToken)
-        => PostAsync(new Uri(url), content, cancellationToken);
-
-    public Task<CompletedHttpResponseMessage> PostAsync(Uri uri, HttpContent? content, CancellationToken cancellationToken)
-        => SendAsync(
-            new RequestMessage
-            {
-                Uri = uri,
-                Method = HttpMethod.Post,
-                Content = content
-            },
-            cancellationToken);
-
-    public Task<CompletedHttpResponseMessage> HeadAsync(string url, CancellationToken cancellationToken)
-        => HeadAsync(new Uri(url), cancellationToken);
-
-    public Task<CompletedHttpResponseMessage> HeadAsync(Uri uri, CancellationToken cancellationToken)
-        => SendAsync(
-            new RequestMessage
-            {
-                Uri = uri,
-                Method = HttpMethod.Head
-            },
-            cancellationToken);
-
-    #endregion
-
     #region Public generic entrypoint
 
-    public Task<CompletedHttpResponseMessage> SendAsync(RequestMessage requestMessage, CancellationToken cancellationToken)
-        => SendInternalAsync(requestMessage, cancellationToken);
+    public Task<CompletedHttpResponseMessage> SendAsync(SerializableRequestMessage serializableRequestMessage, CancellationToken cancellationToken)
+        => SendInternalAsync(serializableRequestMessage, cancellationToken);
 
     #endregion
 
     #region Core Send Logic
     
     private async Task<CompletedHttpResponseMessage> SendInternalAsync(
-        RequestMessage requestMessage,
+        SerializableRequestMessage serializableRequestMessage,
         CancellationToken cancellationToken)
     {
-        var uri = requestMessage.Uri ?? throw new ArgumentNullException(nameof(requestMessage.Uri));
-        var method = requestMessage.Method ?? throw new ArgumentNullException(nameof(requestMessage.Method));
+        var uri = serializableRequestMessage.Uri ?? throw new ArgumentNullException(nameof(serializableRequestMessage.Uri));
+        var method = serializableRequestMessage.Method ?? throw new ArgumentNullException(nameof(serializableRequestMessage.Method));
 
         var correlationId = correlationIdProvider.GetCorrelationId();
 
         logger.LogDebug(
-            "Sending {Method} requestMessage to {Uri} (CorrelationId={CorrelationId})",
+            "Sending {Method} serializableRequestMessage to {Uri} (CorrelationId={CorrelationId})",
             method,
             uri,
             correlationId);
@@ -89,47 +47,47 @@ public class DefaultHttpClient(
             settings.DefaultClient.ReadBodyOnNonSuccess);
 
         using var httpRequest = new HttpRequestMessage(method, uri);
-        using var httpRequest2 = new HttpRequestMessage(method, uri);
-        if (requestMessage.Content is not null)
+
+        if (serializableRequestMessage.Content is not null)
         {
-            httpRequest.Content = requestMessage.Content;
+            httpRequest.Content = serializableRequestMessage.Content;
             logger.LogDebug(
-                "Attached HTTP content to {Method} requestMessage for {Uri}. ContentType={ContentType}, CorrelationId={CorrelationId}",
+                "Attached HTTP content to {Method} serializableRequestMessage for {Uri}. ContentType={ContentType}, CorrelationId={CorrelationId}",
                 method,
                 uri,
                 httpRequest.Content.Headers.ContentType?.MediaType ?? "<none>",
                 correlationId);
         }
 
-        if (requestMessage.Headers is not null)
+        if (serializableRequestMessage.Headers is not null)
         {
             logger.LogDebug(
-                "Applying {HeaderCount} custom headers to {Method} requestMessage for {Uri} (CorrelationId={CorrelationId})",
-                requestMessage.Headers.Count,
+                "Applying {HeaderCount} custom headers to {Method} serializableRequestMessage for {Uri} (CorrelationId={CorrelationId})",
+                serializableRequestMessage.Headers.Count,
                 method,
                 uri,
                 correlationId);
 
-            foreach (var header in requestMessage.Headers)
+            foreach (var header in serializableRequestMessage.Headers)
             {
                 if (string.IsNullOrWhiteSpace(header.Key))
                 {
                     logger.LogDebug(
-                        "Skipping header with empty key for {Method} requestMessage to {Uri} (CorrelationId={CorrelationId})",
+                        "Skipping header with empty key for {Method} serializableRequestMessage to {Uri} (CorrelationId={CorrelationId})",
                         method,
                         uri,
                         correlationId);
                     continue;
                 }
 
-                // Try adding to requestMessage headers; if it fails, try content headers if available.
+                // Try adding to serializableRequestMessage headers; if it fails, try content headers if available.
                 if (!httpRequest.Headers.TryAddWithoutValidation(header.Key, header.Value))
                 {
                     if (httpRequest.Content is not null)
                     {
                         var addedToContent = httpRequest.Content.Headers.TryAddWithoutValidation(header.Key, header.Value);
                         logger.LogDebug(
-                            "Header '{HeaderKey}' could not be added to requestMessage headers for {Method} {Uri}. " +
+                            "Header '{HeaderKey}' could not be added to serializableRequestMessage headers for {Method} {Uri}. " +
                             "AddedToContentHeaders={AddedToContent}, CorrelationId={CorrelationId}",
                             header.Key,
                             method,
@@ -140,7 +98,7 @@ public class DefaultHttpClient(
                     else
                     {
                         logger.LogDebug(
-                            "Header '{HeaderKey}' could not be added to requestMessage headers for {Method} {Uri} " +
+                            "Header '{HeaderKey}' could not be added to serializableRequestMessage headers for {Method} {Uri} " +
                             "and no content is available to attach it to. CorrelationId={CorrelationId}",
                             header.Key,
                             method,
@@ -151,7 +109,7 @@ public class DefaultHttpClient(
                 else
                 {
                     logger.LogDebug(
-                        "Added header '{HeaderKey}' to requestMessage headers for {Method} {Uri} (CorrelationId={CorrelationId})",
+                        "Added header '{HeaderKey}' to serializableRequestMessage headers for {Method} {Uri} (CorrelationId={CorrelationId})",
                         header.Key,
                         method,
                         uri,
@@ -160,8 +118,8 @@ public class DefaultHttpClient(
             }
         }
 
-        var hasPerRequestToken = requestMessage.CancellationToken.CanBeCanceled;
-        var hasTimeout = requestMessage.Timeout is { } timeoutValue && timeoutValue > TimeSpan.Zero;
+        var hasPerRequestToken = serializableRequestMessage.CancellationToken.CanBeCanceled;
+        var hasTimeout = serializableRequestMessage.Timeout is { } timeoutValue && timeoutValue > TimeSpan.Zero;
 
         logger.LogDebug(
             "Building effective cancellation token for {Method} {Uri}. HasPerRequestToken={HasPerRequestToken}, HasTimeout={HasTimeout}, Timeout={Timeout}, CorrelationId={CorrelationId}",
@@ -169,11 +127,11 @@ public class DefaultHttpClient(
             uri,
             hasPerRequestToken,
             hasTimeout,
-            requestMessage.Timeout,
+            serializableRequestMessage.Timeout,
             correlationId);
 
-        // Build effective cancellation token: outer, per-requestMessage and optional timeout.
-        using var effectiveCancellationTokenSource = CreateEffectiveCancellationToken(requestMessage, cancellationToken, out var effectiveCancellationToken);
+        // Build effective cancellation token: outer, per-serializableRequestMessage and optional timeout.
+        using var effectiveCancellationTokenSource = CreateEffectiveCancellationToken(serializableRequestMessage, cancellationToken, out var effectiveCancellationToken);
 
         HttpResponseMessage response;
 
@@ -183,7 +141,7 @@ public class DefaultHttpClient(
             // If you ever want to stream instead of buffer by default, you can switch to:
             // await httpClient.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, effectiveCancellationToken)
             logger.LogDebug(
-                "Dispatching HTTP {Method} requestMessage to {Uri}. Version={Version}, HasContent={HasContent}, RequestHeaderCount={HeaderCount}, CorrelationId={CorrelationId}",
+                "Dispatching HTTP {Method} serializableRequestMessage to {Uri}. Version={Version}, HasContent={HasContent}, RequestHeaderCount={HeaderCount}, CorrelationId={CorrelationId}",
                 method,
                 uri,
                 httpRequest.Version,
@@ -215,28 +173,28 @@ public class DefaultHttpClient(
             {
                 // Outer caller cancellation
                 logger.LogDebug(
-                    "HTTP {Method} requestMessage to {Uri} was cancelled by caller after {ElapsedMs} ms. CorrelationId={CorrelationId}",
+                    "HTTP {Method} serializableRequestMessage to {Uri} was cancelled by caller after {ElapsedMs} ms. CorrelationId={CorrelationId}",
                     method,
                     uri,
                     stopwatch.ElapsedMilliseconds,
                     correlationId);
             }
-            else if (requestMessage.CancellationToken.IsCancellationRequested)
+            else if (serializableRequestMessage.CancellationToken.IsCancellationRequested)
             {
-                // Per-requestMessage cancellation token
+                // Per-serializableRequestMessage cancellation token
                 logger.LogDebug(
-                    "HTTP {Method} requestMessage to {Uri} was cancelled by per-requestMessage token after {ElapsedMs} ms. CorrelationId={CorrelationId}",
+                    "HTTP {Method} serializableRequestMessage to {Uri} was cancelled by per-serializableRequestMessage token after {ElapsedMs} ms. CorrelationId={CorrelationId}",
                     method,
                     uri,
                     stopwatch.ElapsedMilliseconds,
                     correlationId);
             }
-            else if (requestMessage.Timeout is { } timeout)
+            else if (serializableRequestMessage.Timeout is { } timeout)
             {
-                // Per-requestMessage timeout
+                // Per-serializableRequestMessage timeout
                 logger.LogWarning(
                     oce,
-                    "HTTP {Method} requestMessage to {Uri} timed out after {Timeout} (ElapsedMs={ElapsedMs}). CorrelationId={CorrelationId}",
+                    "HTTP {Method} serializableRequestMessage to {Uri} timed out after {Timeout} (ElapsedMs={ElapsedMs}). CorrelationId={CorrelationId}",
                     method,
                     uri,
                     timeout,
@@ -248,7 +206,7 @@ public class DefaultHttpClient(
                 // Fallback – should rarely hit if all cases above are covered
                 logger.LogDebug(
                     oce,
-                    "HTTP {Method} requestMessage to {Uri} was cancelled (ElapsedMs={ElapsedMs}). CorrelationId={CorrelationId}",
+                    "HTTP {Method} serializableRequestMessage to {Uri} was cancelled (ElapsedMs={ElapsedMs}). CorrelationId={CorrelationId}",
                     method,
                     uri,
                     stopwatch.ElapsedMilliseconds,
@@ -263,7 +221,7 @@ public class DefaultHttpClient(
 
             logger.LogWarning(
                 httpException,
-                "HTTP {Method} requestMessage failed while fetching resource from '{Uri}'. ElapsedMs={ElapsedMs}, CorrelationId={CorrelationId}",
+                "HTTP {Method} serializableRequestMessage failed while fetching resource from '{Uri}'. ElapsedMs={ElapsedMs}, CorrelationId={CorrelationId}",
                 method,
                 uri,
                 stopwatch.ElapsedMilliseconds,
@@ -272,11 +230,11 @@ public class DefaultHttpClient(
             // Return a synthetic response so callers can continue gracefully on DNS/connection failures.
             return new CompletedHttpResponseMessage
             {
-                Request = requestMessage,
-                Method = requestMessage.Method.Method,
+                SerializableRequest = serializableRequestMessage,
+                Method = serializableRequestMessage.Method.Method,
                 Uri = uri,
                 StatusCode = System.Net.HttpStatusCode.ServiceUnavailable,
-                Message = $"Request failed: {httpException.Message}",
+                Message = $"SerializableRequest failed: {httpException.Message}",
                 Headers = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase),
                 CorrelationId = correlationId
             };
@@ -287,7 +245,7 @@ public class DefaultHttpClient(
 
             logger.LogWarning(
                 exception,
-                "Unexpected error occurred while sending {Method} requestMessage for resource '{Uri}'. ElapsedMs={ElapsedMs}, CorrelationId={CorrelationId}",
+                "Unexpected error occurred while sending {Method} serializableRequestMessage for resource '{Uri}'. ElapsedMs={ElapsedMs}, CorrelationId={CorrelationId}",
                 method,
                 uri,
                 stopwatch.ElapsedMilliseconds,
@@ -295,8 +253,8 @@ public class DefaultHttpClient(
             
             return new CompletedHttpResponseMessage
             {
-                Request = requestMessage,
-                Method = requestMessage.Method.Method,
+                SerializableRequest = serializableRequestMessage,
+                Method = serializableRequestMessage.Method.Method,
                 Uri = uri,
                 StatusCode = System.Net.HttpStatusCode.InternalServerError,
                 Message = $"Unexpected send error: {exception.Message}",
@@ -306,8 +264,8 @@ public class DefaultHttpClient(
         }
 
         var isHead = method == HttpMethod.Head;
-        var readBodyOnSuccess = !isHead && (requestMessage.ReadBodyOnSuccess ?? settings.DefaultClient.ReadBodyOnSuccess ?? true);
-        var readBodyOnNonSuccess = !isHead && (requestMessage.ReadBodyOnNonSuccess ?? settings.DefaultClient.ReadBodyOnNonSuccess ?? false);
+        var readBodyOnSuccess = !isHead && (serializableRequestMessage.ReadBodyOnSuccess ?? settings.DefaultClient.ReadBodyOnSuccess ?? true);
+        var readBodyOnNonSuccess = !isHead && (serializableRequestMessage.ReadBodyOnNonSuccess ?? settings.DefaultClient.ReadBodyOnNonSuccess ?? false);
 
         using (response)
         {
@@ -321,35 +279,39 @@ public class DefaultHttpClient(
                 readBodyOnNonSuccess,
                 correlationId);
 
-            return await responseMessageProcessor.ProcessAsync(
-                requestMessage,
+            var result = await responseMessageProcessor.ProcessAsync(
+                serializableRequestMessage,
                 response,
                 correlationId, 
                 uri, 
                 readBodyOnSuccess, 
                 readBodyOnNonSuccess, 
-                requestMessage.ShouldReadBodyAsync, 
+                serializableRequestMessage.ShouldReadBodyAsync, 
                 effectiveCancellationToken)
             .ConfigureAwait(false);
+
+            return result;
+
         }
+
     }
     
     private static CancellationTokenSource CreateEffectiveCancellationToken(
-        RequestMessage requestMessage,
+        SerializableRequestMessage serializableRequestMessage,
         CancellationToken outerCancellationToken,
         out CancellationToken effectiveCancellationToken)
     {
-        // We always create a CancellationTokenSource to allow per-requestMessage timeout even if outerCancellationToken is None.
-        var hasPerRequestToken = requestMessage.CancellationToken.CanBeCanceled;
-        var hasTimeout = requestMessage.Timeout is { } timeout && timeout > TimeSpan.Zero;
+        // We always create a CancellationTokenSource to allow per-serializableRequestMessage timeout even if outerCancellationToken is None.
+        var hasPerRequestToken = serializableRequestMessage.CancellationToken.CanBeCanceled;
+        var hasTimeout = serializableRequestMessage.Timeout is { } timeout && timeout > TimeSpan.Zero;
 
         var cancellationTokenSource = hasPerRequestToken
-            ? CancellationTokenSource.CreateLinkedTokenSource(outerCancellationToken, requestMessage.CancellationToken)
+            ? CancellationTokenSource.CreateLinkedTokenSource(outerCancellationToken, serializableRequestMessage.CancellationToken)
             : CancellationTokenSource.CreateLinkedTokenSource(outerCancellationToken);
 
         if (hasTimeout)
         {
-            cancellationTokenSource.CancelAfter(requestMessage.Timeout!.Value);
+            cancellationTokenSource.CancelAfter(serializableRequestMessage.Timeout!.Value);
         }
 
         effectiveCancellationToken = cancellationTokenSource.Token;

@@ -40,6 +40,7 @@ public static class ConfigurationExtensions
         builder.Services.AddSchedulingFeatures(builder.Configuration);
         builder.Services.AddFileSystemDownloader(builder.Configuration);
         builder.Services.AddScoped<IHtmlQuery, AngleSharpHtmlQuery>();
+        builder.Services.AddSingleton<FileSystemHttpFileProvider>();
 
         builder.Services.AddSingleton<ILinkParser, LinkParser>();
         builder.Services.AddSingleton<IHttpFileParser, HttpFileParser>();
