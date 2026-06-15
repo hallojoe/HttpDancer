@@ -221,7 +221,10 @@ public sealed class RatedHttpFileRunner(
         
         await using var completionLog = new BatchFlushQueue<RatedScheduleResponseMessage>(
             batchSize: 10,
-            flushAsync: (items, ct) => File.AppendAllLinesAsync("app.log", items, ct),
+            flushAsync: (items, ct) => File.AppendAllLinesAsync(
+                "app.log",
+                items.Select(CreateLogLine),
+                ct),
             boundedCapacity: 10_000,
             cancellationToken: CancellationToken.None);
 
@@ -230,7 +233,7 @@ public sealed class RatedHttpFileRunner(
             {
                 await fileSystemHttpFileProvider.WriteAsync(completedHttpResponseMessage, ct);
 
-                Console.WriteLine($"Processed {completedHttpResponseMessage.Uri}");
+                System.Console.WriteLine($"Processed {completedHttpResponseMessage.Uri}");
                 
             },
             capacity: 1_000,
@@ -304,5 +307,10 @@ public sealed class RatedHttpFileRunner(
             Requests = httpFileDocumentFromUrl.Requests.Skip(10).Take(10).ToList()
         };
         return await Run(httpFileDocumentFromUrl, rate, rateWindow, cancellationToken);
+    }
+
+    private static string CreateLogLine(RatedScheduleResponseMessage responseMessage)
+    {
+        return JsonSerializer.Serialize(responseMessage);
     }
 }
