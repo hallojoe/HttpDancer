@@ -1,9 +1,5 @@
-using HttpDancer.Console.Workflows;
 using HttpDancer.Core.Configuration;
-using HttpDancer.FileFormats.HttpFile;
-using HttpDancer.FileSystemDownloader.Configuration;
-using HttpDancer.Html;
-using HttpDancer.Parsing;
+using HttpDancer.Downloading.Configuration;
 using HttpDancer.Scheduling.Configuration;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -28,8 +24,6 @@ public static class ConfigurationExtensions
             .SetBasePath(Directory.GetCurrentDirectory())
             .AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
             .AddJsonFile("appsettings.KnownMediaTypes.json", optional: true, reloadOnChange: true)
-            .AddJsonFile("appsettings.HtmlMinification.json", optional: true, reloadOnChange: true)
-            .AddJsonFile("appsettings.HtmlQuerying.json", optional: true, reloadOnChange: true)
             .AddJsonFile("appsettings.UrlNaming.json", optional: true, reloadOnChange: true)
             .AddEnvironmentVariables();
         
@@ -38,17 +32,7 @@ public static class ConfigurationExtensions
         builder.Services.AddHttpDancerSettings(builder.Configuration);
         builder.Services.AddDefaultHttpClient(builder.Configuration);
         builder.Services.AddSchedulingFeatures(builder.Configuration);
-        builder.Services.AddFileSystemDownloader(builder.Configuration);
-        builder.Services.AddScoped<IHtmlQuery, AngleSharpHtmlQuery>();
-        builder.Services.AddSingleton<FileSystemHttpFileProvider>();
-
-        builder.Services.AddSingleton<ILinkParser, LinkParser>();
-        builder.Services.AddSingleton<IHttpFileParser, HttpFileParser>();
-        builder.Services.AddSingleton<IHttpFileRenderer, HttpFileRenderer>();
-
-        builder.Services.AddSingleton<HttpFileFactory>();
-        
-        builder.Services.AddSingleton<RatedHttpFileRunner>();
+        builder.Services.AddDownloadWorkflow(builder.Configuration);
 
         
         return builder;

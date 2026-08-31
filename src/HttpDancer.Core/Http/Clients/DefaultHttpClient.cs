@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using HttpDancer.Core.Http.Observability;
+using HttpDancer.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -138,8 +139,7 @@ public class DefaultHttpClient(
         var stopwatch = Stopwatch.StartNew();
         try
         {
-            // If you ever want to stream instead of buffer by default, you can switch to:
-            // await httpClient.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, effectiveCancellationToken)
+            // Receive headers first so the content-type policy can reject a response before its body is downloaded.
             logger.LogDebug(
                 "Dispatching HTTP {Method} serializableRequestMessage to {Uri}. Version={Version}, HasContent={HasContent}, RequestHeaderCount={HeaderCount}, CorrelationId={CorrelationId}",
                 method,
@@ -150,7 +150,7 @@ public class DefaultHttpClient(
                 correlationId);
 
             response = await httpClient
-                .SendAsync(httpRequest, effectiveCancellationToken)
+                .SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, effectiveCancellationToken)
                 .ConfigureAwait(false);
 
             stopwatch.Stop();
@@ -286,7 +286,7 @@ public class DefaultHttpClient(
                 uri, 
                 readBodyOnSuccess, 
                 readBodyOnNonSuccess, 
-                serializableRequestMessage.ShouldReadBodyAsync, 
+                CreateBodyReadPolicy(serializableRequestMessage, settings.DefaultClient.AllowedContentTypes),
                 effectiveCancellationToken)
             .ConfigureAwait(false);
 
@@ -295,6 +295,23 @@ public class DefaultHttpClient(
         }
 
     }
+
+    private static Func<HttpResponseMessage, Task<bool?>> CreateBodyReadPolicy(
+        SerializableRequestMessage serializableRequestMessage,
+        string allowedContentTypes) =>
+        async response =>
+        {
+            var contentType = response.Content.Headers.ContentType?.MediaType;
+            if (string.IsNullOrWhiteSpace(contentType) ||
+                contentType.IsMatch(allowedContentTypes) is not true)
+            {
+                return false;
+            }
+
+            return serializableRequestMessage.ShouldReadBodyAsync is null
+                ? null
+                : await serializableRequestMessage.ShouldReadBodyAsync(response).ConfigureAwait(false);
+        };
     
     private static CancellationTokenSource CreateEffectiveCancellationToken(
         SerializableRequestMessage serializableRequestMessage,

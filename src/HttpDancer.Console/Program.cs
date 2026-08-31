@@ -1,11 +1,7 @@
-﻿using System.Diagnostics;
-using System.Text;
-using HttpDancer.Console.Workflows;
-using HttpDancer.Core.Http.Clients;
-using HttpDancer.FileFormats.HttpFile;
-using HttpDancer.Scheduling.RatedScheduling;
+﻿using HttpDancer.Downloading;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 
 namespace HttpDancer.Console;
 
@@ -13,67 +9,34 @@ public class Program
 {
     public static async Task Main(string[] args)
     {
-        // Create the host builder manually
         var builder = Host.CreateApplicationBuilder(args);
-
-        // Configure application
         builder.ConfigureApplication();
-        
-        // Build host
         using var host = builder.Build();
-
-        // Create a DI scope
         using var scope = host.Services.CreateScope();
 
-        // Get required services
-        // var urlNamingOptions = scope.ServiceProvider.GetRequiredService<IOptions<UrlNamingOptions>>();
-        // var urlNameProvider = scope.ServiceProvider.GetRequiredService<IUrlNamer>();
-        // var fileSystemDownloaderSettings = scope.ServiceProvider.GetRequiredService<IOptions<FileSystemDownloaderSettings>>();
-        // var dataProvider = scope.ServiceProvider.GetRequiredService<IFileSystemDataProvider>();
-        // var ratedScheduleFactory = scope.ServiceProvider.GetRequiredService<IRatedScheduleFactory>();
-        // var ratedScheduleRunner = scope.ServiceProvider.GetRequiredService<IRatedScheduleRunner>();
-        // var httpClient = scope.ServiceProvider.GetRequiredService<IHttpClient>();
-        // var httpFileFactory = scope.ServiceProvider.GetRequiredService<HttpFileFactory>();
-        var httpFileRenderer = scope.ServiceProvider.GetRequiredService<IHttpFileRenderer>();
-        // var httpFileDocumentFromUrl = await httpFileFactory.CreateAsync(new Uri("https://danbolig.dk/sitemap.website.xml"));
-        // var httpFileDocumentAsStringFromUnStructuredDocument2 = httpFileRenderer.Render(
-        //     httpFileDocumentFromUrl,
-        //     new HttpFileRenderOptions(true, false));
-        //
-        // await File.WriteAllTextAsync(
-        //     Path.Combine(Directory.GetCurrentDirectory(), "danbolig.http.rendered.html"), 
-        //     httpFileDocumentAsStringFromUnStructuredDocument2,
-        //     Encoding.UTF8);
-        
-        var ratedHttpFileRunner = scope.ServiceProvider.GetRequiredService<RatedHttpFileRunner>();
+        var options = scope.ServiceProvider.GetRequiredService<IOptions<DownloadOptions>>().Value;
+        var seedStrings = args.Length > 0 ? args : options.SeedUrls;
+        if (seedStrings.Length == 0)
+        {
+            System.Console.Error.WriteLine("Supply one or more seed URLs, or configure HttpDancer:Download:SeedUrls.");
+            return;
+        }
 
-        // var xprocessedHttpFileDocument = await ratedHttpFileRunner.Run(
-        //     new Uri("https://digst.dk/sitemap/"), 
-        //     1, 
-        //     TimeSpan.FromSeconds(3), 
-        //     CancellationToken.None);
+        var runService = scope.ServiceProvider.GetRequiredService<IDownloadRunService>();
+        foreach (var seedString in seedStrings)
+        {
+            if (!Uri.TryCreate(seedString, UriKind.Absolute, out var seedUri) ||
+                (seedUri.Scheme != Uri.UriSchemeHttp && seedUri.Scheme != Uri.UriSchemeHttps))
+            {
+                System.Console.Error.WriteLine($"Invalid seed URL: {seedString}");
+                continue;
+            }
 
-        var processedHttpFileDocument = await ratedHttpFileRunner.Run(
-            new Uri("https://vitusguld.dk"), 
-            1, 
-            TimeSpan.FromSeconds(30), 
-            CancellationToken.None);
-
-        
-        
-        
-        
-        var processedHttpFileDocumentString = httpFileRenderer.Render(
-            processedHttpFileDocument,
-            new HttpFileRenderOptions(true, false));
-
-        await File.WriteAllTextAsync(
-            Path.Combine(Directory.GetCurrentDirectory(), "vitus.dk.http.log"), 
-            processedHttpFileDocumentString,
-            Encoding.UTF8);
-
-        System.Console.WriteLine("Crawler finished. Press any key to exit...");
-        System.Console.ReadKey();
+            System.Console.WriteLine($"Starting seed: {seedUri}");
+            var result = await runService.RunAsync(new DownloadRunRequest(seedUri, options), CancellationToken.None);
+            System.Console.WriteLine(
+                $"Completed seed: {seedUri}. Requests={result.ManifestRequestCount}, " +
+                $"Downloaded={result.DownloadedCount}, Failed={result.FailedCount}, Archive={result.RunDirectory}");
+        }
     }
 }
-

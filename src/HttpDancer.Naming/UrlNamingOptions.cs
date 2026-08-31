@@ -24,7 +24,7 @@ public sealed class UrlNamingOptions
     /// Gets a reusable default configuration instance representing the library's
     /// recommended baseline behavior for URL-to-path/name conversion.
     /// </summary>
-    public static UrlNamingOptions Default => new UrlNamingOptions();
+    public static UrlNamingOptions Default => new();
 
     /// <summary>
     /// Gets or sets the strategy that controls how trailing slashes are interpreted

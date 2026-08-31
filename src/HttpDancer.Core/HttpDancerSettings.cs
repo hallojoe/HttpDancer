@@ -18,6 +18,12 @@ public class HttpDancerClientSettings
     public string AllowedContentTypes { get; set; } = "text/*";
 
     /// <summary>
+    /// Comma-separated wildcard patterns for URLs that must not be included in a download manifest.
+    /// This is applied before download scheduling; it does not affect the seed request.
+    /// </summary>
+    public string? DisallowedUrlPattern { get; set; }
+
+    /// <summary>
     /// Specifies the permitted host patterns for HTTP requests.
     /// Hosts matching this pattern can proceed, while others are skipped.
     /// Wildcard patterns are supported for flexible matching.

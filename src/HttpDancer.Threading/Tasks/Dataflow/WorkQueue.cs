@@ -1,6 +1,6 @@
 using System.Threading.Tasks.Dataflow;
 
-namespace Gr8Io.Threading.Tasks.Dataflow;
+namespace HttpDancer.Threading.Tasks.Dataflow;
 
 public sealed class WorkQueue<T> : IAsyncDisposable
 {

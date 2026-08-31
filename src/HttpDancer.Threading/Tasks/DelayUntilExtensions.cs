@@ -1,6 +1,6 @@
 using System.Diagnostics;
 
-namespace Gr8Io.Threading.Tasks;
+namespace HttpDancer.Threading.Tasks;
 
 public static class DelayUntilExtensions
 {

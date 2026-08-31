@@ -69,10 +69,15 @@ public class HttpResponseMessageProcessor(ILogger<HttpResponseMessageProcessor> 
             BodyLength = response.Content.Headers.ContentLength ?? -1,
             CorrelationId = correlationId
         };
-        
+
+        var bodyReadOverride = shouldReadBodyAsync is null
+            ? null
+            : await shouldReadBodyAsync(response).ConfigureAwait(false);
+        var shouldReadBody = bodyReadOverride ?? (isSuccess ? readBodyOnSuccess : readBodyOnNonSuccess);
+
         if (isSuccess)
         {
-            if (readBodyOnSuccess)
+            if (shouldReadBody)
             {
                 try
                 {
@@ -116,7 +121,7 @@ public class HttpResponseMessageProcessor(ILogger<HttpResponseMessageProcessor> 
 
         byte[]? errorBody = null;
 
-        if (readBodyOnNonSuccess)
+        if (shouldReadBody)
         {
             try
             {
@@ -140,17 +145,10 @@ public class HttpResponseMessageProcessor(ILogger<HttpResponseMessageProcessor> 
                     correlationId);
             }
         }
-        else if (readBodyOnNonSuccess)
-        {
-            logger.LogDebug(
-                "Configured to read body on non-success for {Uri}, but response has no content. CorrelationId={CorrelationId}",
-                effectiveUri,
-                correlationId);
-        }
         else
         {
             logger.LogDebug(
-                "Configured not to read body on non-success for {Uri}. CorrelationId={CorrelationId}",
+                "Configured not to read body for non-success response from {Uri}. CorrelationId={CorrelationId}",
                 effectiveUri,
                 correlationId);
         }

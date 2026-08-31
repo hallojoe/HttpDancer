@@ -1,6 +1,6 @@
 using System.Runtime.ExceptionServices;
 
-namespace Gr8Io.Threading.Tasks;
+namespace HttpDancer.Threading.Tasks;
 
 /// <summary>
 /// Extension methods for System.Threading.Tasks.Task and System.Threading.Tasks.ValueTask.

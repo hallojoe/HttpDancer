@@ -8,7 +8,7 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddParsing(this IServiceCollection services)
     {
         services.AddSingleton<ILinkHttpHeaderParser, DefaultLinkHttpHttpHeaderParser>();
-        services.AddSingleton<ILinkParser, LinkParser>();
+        services.AddSingleton<ILinkParser, AngleSharpLinkParser>();
         services.AddSingleton<IDateTimeParser, DateTimeParser>();
 
         return services;
